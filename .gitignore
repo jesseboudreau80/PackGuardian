@@ -8,3 +8,10 @@ __pycache__/
 node_modules/
 .next/
 
+# Logs
+.logs/
+
+# Local env overrides
+web/.env.local
+api/.env
+

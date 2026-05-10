@@ -1,0 +1,1 @@
+# Fire Safety module — planned
