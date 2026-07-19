@@ -131,6 +131,7 @@ def list_cases(
     priority_filter: Annotated[str | None, Query(alias="priority")] = None,
     escalation_min: Annotated[int, Query(ge=0, le=3)] = 0,
     assigned_to: Annotated[uuid.UUID | None, Query()] = None,
+    incident_id: Annotated[uuid.UUID | None, Query()] = None,
     skip: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     db: Session = Depends(get_db),
@@ -147,13 +148,33 @@ def list_cases(
             q = q.filter(IncidentCase.escalation_level >= escalation_min)
         if assigned_to:
             q = q.filter(IncidentCase.assigned_to_user_id == assigned_to)
+        if incident_id:
+            q = q.filter(IncidentCase.incident_id == incident_id)
         rows = (
             q.order_by(IncidentCase.updated_at.desc())
             .offset(skip)
             .limit(limit)
             .all()
         )
-        return [CaseRead.model_validate(r) for r in rows]
+        # Enrich each case with incident_type and center_id via a single bulk join
+        incident_ids = [r.incident_id for r in rows]
+        incident_map: dict[uuid.UUID, Incident] = {}
+        if incident_ids:
+            incidents = db.query(Incident).filter(
+                Incident.id.in_(incident_ids),
+                Incident.tenant_id == current_user.tenant_id,
+            ).all()
+            incident_map = {i.id: i for i in incidents}
+
+        results: list[CaseRead] = []
+        for r in rows:
+            obj = CaseRead.model_validate(r)
+            inc = incident_map.get(r.incident_id)
+            if inc:
+                obj.incident_type = inc.incident_type
+                obj.center_id = inc.center_id
+            results.append(obj)
+        return results
     except Exception as exc:
         logger.exception("[packguardian][cases] Failed to list cases tenant=%s", current_user.tenant_id)
         raise HTTPException(status_code=500, detail="Failed to list cases") from exc
@@ -660,3 +681,196 @@ def get_operational_timeline(
     # Sort chronologically; apply limit
     events.sort(key=lambda e: e.created_at)
     return events[-limit:]
+
+
+# ── Investigation Brief ───────────────────────────────────────────────────────
+
+def _extract_recurrence_patterns(
+    db: Session, incident, tenant_id, window_days: int = 90
+) -> list:
+    """
+    Lightweight pattern detection for a single incident.
+    Finds related incidents sharing entity names (dogs, locations, equipment).
+    """
+    import re
+    from datetime import datetime, timedelta, timezone
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=window_days)
+    candidates = db.query(Incident).filter(
+        Incident.tenant_id == tenant_id,
+        Incident.created_at >= cutoff,
+        Incident.id != incident.id,
+    ).all()
+
+    desc = (incident.description or "").lower()
+    patterns = []
+
+    # 1. Same incident type at same center
+    same_type = [i for i in candidates
+                 if i.incident_type == incident.incident_type
+                 and i.center_id == incident.center_id]
+    if len(same_type) >= 1:
+        label = incident.incident_type.replace("_", " ")
+        patterns.append({
+            "pattern_type": "incident_type",
+            "label": f"{len(same_type) + 1} {label} incidents at {incident.center_id} in {window_days} days",
+            "count": len(same_type) + 1,
+            "window_days": window_days,
+            "related_incident_ids": [str(i.id) for i in same_type[:5]],
+        })
+
+    # 2. Dog names (Capitalized words in context of "dog", "pet", or breed refs)
+    dog_names = re.findall(
+        r'\b([A-Z][a-z]{2,12})\b(?=.*(?:dog|bite|kennel|play|boarding|conflict|pound))',
+        incident.description or "",
+        re.IGNORECASE,
+    )
+    # Also match patterns like "named Max" or "(Max," or "Max ("
+    dog_names += re.findall(r'(?:named|called|dog)\s+([A-Z][a-z]{2,12})', incident.description or "")
+    _DOG_STOPWORDS = {
+        "the", "was", "dog", "had", "her", "his", "and", "but", "not", "she", "him",
+        "kennel", "play", "yard", "room", "area", "zone", "bay", "staff", "team",
+        "floor", "drain", "door", "gate", "wall", "shed", "cage", "run", "pen",
+        "this", "that", "with", "from", "into", "onto", "upon", "both", "each",
+        "two", "one", "six", "ten", "four", "five", "nine", "eight", "seven",
+        "male", "female", "large", "small", "brown", "black", "white", "gray",
+        "left", "right", "upper", "lower", "front", "back", "side", "main",
+        "shift", "morning", "evening", "night", "closing", "opening",
+        "employee", "worker", "groomer", "manager", "supervisor", "technician",
+    }
+    dog_names = list({n.title() for n in dog_names if len(n) > 2 and n.lower() not in _DOG_STOPWORDS})
+
+    for name in dog_names[:3]:
+        matches = [i for i in candidates
+                   if name.lower() in (i.description or "").lower()]
+        if len(matches) >= 1:
+            patterns.append({
+                "pattern_type": "dog_name",
+                "label": f"{name} involved in {len(matches) + 1} incidents in {window_days} days",
+                "count": len(matches) + 1,
+                "window_days": window_days,
+                "related_incident_ids": [str(i.id) for i in matches[:5]],
+            })
+
+    # 3. Location keywords (drain, dryer, kennel, yard, grooming station)
+    location_keywords = re.findall(
+        r'\b(drain|dryer|kennel [A-Z0-9-]+|play yard [A-Z0-9]+|yard [A-Z0-9]+|'
+        r'grooming (?:station|table|bay)|wash bay|entrance|hallway)\b',
+        incident.description or "",
+        re.IGNORECASE,
+    )
+    for loc in list({kw.lower() for kw in location_keywords})[:2]:
+        matches = [i for i in candidates
+                   if loc in (i.description or "").lower()
+                   and i.center_id == incident.center_id]
+        if len(matches) >= 1:
+            patterns.append({
+                "pattern_type": "location",
+                "label": f"{len(matches) + 1} incidents near {loc} at {incident.center_id}",
+                "count": len(matches) + 1,
+                "window_days": window_days,
+                "related_incident_ids": [str(i.id) for i in matches[:5]],
+            })
+
+    # 4. Same employee name
+    if incident.employee_name:
+        emp = incident.employee_name.lower()
+        matches = [i for i in candidates
+                   if i.employee_name and i.employee_name.lower() == emp]
+        if len(matches) >= 1:
+            patterns.append({
+                "pattern_type": "employee",
+                "label": f"{incident.employee_name} involved in {len(matches) + 1} incidents in {window_days} days",
+                "count": len(matches) + 1,
+                "window_days": window_days,
+                "related_incident_ids": [str(i.id) for i in matches[:5]],
+            })
+
+    return patterns
+
+
+@router.get("/{case_id}/brief", response_model=dict)
+def get_investigation_brief(
+    case_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """
+    Aggregated operational intelligence for investigation briefing.
+    Returns a structured summary: situation, risk, involvement, recurrence, next step.
+    """
+    from app.modules.corrective_actions.models import CorrectiveAction
+    from app.modules.witness.models import WitnessStatement
+    from datetime import datetime, timezone
+
+    case = _get_case_or_404(db, case_id, current_user.tenant_id)
+    incident = db.query(Incident).filter(Incident.id == case.incident_id).first()
+    if not incident:
+        raise HTTPException(status_code=404, detail="Linked incident not found")
+
+    # Risk data
+    eff_sev = incident.adjusted_severity or incident.reported_severity
+    risk_score = incident.operational_risk_score or incident.risk_score
+    risk_band = getattr(incident, "risk_band", None)
+    risk_contributors = getattr(incident, "risk_contributors", None)
+
+    # Headline
+    type_label = incident.incident_type.replace("_", " ").title()
+    headline_parts = [type_label]
+    if incident.employee_name:
+        headline_parts.append(f"involving {incident.employee_name}")
+    if incident.center_id:
+        headline_parts.append(f"at {incident.center_id}")
+    severity_word = {"low": "low-severity", "medium": "medium-severity", "high": "high-severity", "critical": "critical"}.get(eff_sev, eff_sev)
+    headline = f"{severity_word.capitalize()} {' '.join(headline_parts)}"
+
+    # Corrective actions
+    now = datetime.now(timezone.utc)
+    cas = db.query(CorrectiveAction).filter(
+        CorrectiveAction.case_id == case_id,
+        CorrectiveAction.tenant_id == current_user.tenant_id,
+    ).all()
+    open_cas = [ca for ca in cas if ca.status not in ("completed",)]
+    overdue_cas = [ca for ca in open_cas if ca.due_date and ca.due_date.replace(
+        tzinfo=timezone.utc if ca.due_date.tzinfo is None else ca.due_date.tzinfo) < now]
+
+    # Witnesses
+    witness_count = db.query(WitnessStatement).filter(
+        WitnessStatement.case_id == case_id,
+        WitnessStatement.tenant_id == current_user.tenant_id,
+    ).count()
+
+    # Recurrence patterns
+    patterns = _extract_recurrence_patterns(db, incident, current_user.tenant_id)
+
+    # Recommended next step
+    if case.status in ("new",):
+        next_step = "Assign this case to an investigator to begin review"
+    elif case.status in ("assigned", "investigating") and len(open_cas) == 0:
+        next_step = "Add corrective actions to track follow-through"
+    elif overdue_cas:
+        next_step = f"Follow up on {len(overdue_cas)} overdue corrective action(s)"
+    elif witness_count == 0 and incident.incident_type in ("dog_bite", "dog_fight", "employee_injury", "chemical", "slip_fall"):
+        next_step = "Collect witness statements to complete the investigation"
+    elif case.status not in ("resolved", "closed") and len(open_cas) == 0:
+        next_step = "Review documentation and mark case resolved when complete"
+    elif case.status in ("resolved",):
+        next_step = "Case resolved — archive or escalate to OSHA if required"
+    else:
+        next_step = "Continue investigation and update case status as work progresses"
+
+    return {
+        "case_id": str(case_id),
+        "headline": headline,
+        "severity_effective": eff_sev,
+        "risk_score": risk_score,
+        "risk_band": risk_band,
+        "risk_contributors": risk_contributors,
+        "employee_name": incident.employee_name,
+        "witness_count": witness_count,
+        "open_corrective_action_count": len(open_cas),
+        "overdue_corrective_action_count": len(overdue_cas),
+        "recurrence_patterns": patterns,
+        "osha_review_required": bool(incident.recordable),
+        "recommended_next_step": next_step,
+    }

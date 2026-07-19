@@ -35,12 +35,15 @@ class CaseRead(BaseModel):
     due_date: datetime | None
     created_at: datetime
     updated_at: datetime
+    # Denormalized from incident for list display — None when join unavailable
+    incident_type: str | None = None
+    center_id: str | None = None
 
     model_config = {"from_attributes": True}
 
 
 class IncidentSummary(BaseModel):
-    """Minimal incident info embedded in case responses."""
+    """Incident info embedded in case responses."""
     id: UUID
     center_id: str
     incident_type: str
@@ -48,11 +51,51 @@ class IncidentSummary(BaseModel):
     adjusted_severity: str | None
     category: str | None
     risk_score: int | None
+    operational_risk_score: int | None = None
+    risk_band: str | None = None
+    risk_contributors: dict | None = None
     status: str
     recordable: bool | None
     created_at: datetime
+    description: str | None = None
+    explanation: str | None = None
+    employee_name: str | None = None
+    body_part: str | None = None
+    treatment_type: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+class RecurrencePattern(BaseModel):
+    """A detected operational pattern related to an incident."""
+    pattern_type: str        # dog_name | location | incident_type | equipment | employee
+    label: str               # human-readable description
+    count: int
+    window_days: int
+    related_incident_ids: list[str]
+
+
+class InvestigationBrief(BaseModel):
+    """Aggregated operational intelligence for a case investigation."""
+    case_id: UUID
+    # Situation
+    headline: str            # one-sentence what/where/severity
+    severity_effective: str
+    risk_score: int | None
+    risk_band: str | None
+    risk_contributors: dict | None
+    # Involvement
+    employee_name: str | None
+    witness_count: int
+    # Actions
+    open_corrective_action_count: int
+    overdue_corrective_action_count: int
+    # Recurrence
+    recurrence_patterns: list[RecurrencePattern]
+    # OSHA
+    osha_review_required: bool
+    # Status
+    recommended_next_step: str
 
 
 class CaseDetail(BaseModel):

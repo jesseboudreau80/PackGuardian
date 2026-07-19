@@ -1,12 +1,53 @@
 @import "tailwindcss";
 
+/* ═══════════════════════════════════════════════════════════════════
+   PackGuardian Design System
+   Premium enterprise operational software
+   ═══════════════════════════════════════════════════════════════════ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-  /* Brand variables — overridden at runtime by TenantContext.applyBranding().
-     These fallback values keep the UI styled before hydration completes. */
-  --brand-primary: #4F46E5;
-  --brand-secondary: #6366F1;
+  /* ── Core Palette ── */
+  --pg-navy:       #1e3a5f;   /* deepest — primary authority */
+  --pg-slate:      #2d4f73;   /* slate blue — nav, headers */
+  --pg-steel:      #3d6b9e;   /* steel blue — interactive */
+  --pg-sky:        #5b8db8;   /* lighter steel — accents */
+  --pg-mist:       #e4ecf4;   /* very light blue — tinted surfaces */
+  --pg-surface:    #f2f5f9;   /* page background */
+  --pg-white:      #ffffff;
+
+  /* ── Semantic Text ── */
+  --pg-text:       #1a2b3d;   /* near-black, navy-tinted */
+  --pg-text-sub:   #3d5166;   /* secondary text */
+  --pg-text-muted: #7a8da0;   /* muted / placeholder */
+
+  /* ── Borders ── */
+  --pg-border:       #d8e2ec;
+  --pg-border-soft:  #e8eef4;
+  --pg-border-focus: #3d6b9e;
+
+  /* ── Shadows — navy-tinted, not pure black ── */
+  --shadow-xs:     0 1px 2px rgba(30, 58, 95, 0.04);
+  --shadow-card:   0 1px 3px rgba(30, 58, 95, 0.07),
+                   0 1px 2px rgba(30, 58, 95, 0.04);
+  --shadow-raised: 0 4px 12px rgba(30, 58, 95, 0.10),
+                   0 2px 4px  rgba(30, 58, 95, 0.06);
+  --shadow-overlay: 0 12px 32px rgba(30, 58, 95, 0.15),
+                    0 4px 8px  rgba(30, 58, 95, 0.08);
+
+  /* ── Gradients ── */
+  --gradient-navy:    linear-gradient(135deg, #1e3a5f 0%, #2d4f73 100%);
+  --gradient-steel:   linear-gradient(135deg, #2d4f73 0%, #3d6b9e 100%);
+  --gradient-surface: linear-gradient(180deg, #f8fafc 0%, #f2f5f9 100%);
+  --gradient-header:  linear-gradient(180deg, #ffffff 0%, #fafcfe 100%);
+  --gradient-mist:    linear-gradient(135deg, #f0f5fa 0%, #e8eef4 100%);
+
+  /* ── Brand (runtime-overridden by TenantContext.applyBranding) ── */
+  --brand-primary:   #1e3a5f;
+  --brand-secondary: #3d6b9e;
+
+  /* ── Tailwind compat ── */
+  --background: var(--pg-surface);
+  --foreground: var(--pg-text);
 }
 
 @theme inline {
@@ -14,17 +55,247 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* Register PG palette as Tailwind utilities */
+  --color-pg-navy:    #1e3a5f;
+  --color-pg-slate:   #2d4f73;
+  --color-pg-steel:   #3d6b9e;
+  --color-pg-sky:     #5b8db8;
+  --color-pg-mist:    #e4ecf4;
+  --color-pg-surface: #f2f5f9;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* ── Base ─────────────────────────────────────────────────────────── */
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--pg-surface);
+  color: var(--pg-text);
+  font-family: var(--font-geist-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
+
+/* ── Component primitives ─────────────────────────────────────────── */
+
+/* Card — elevated white surface */
+.pg-card {
+  background: var(--pg-white);
+  border: 1px solid var(--pg-border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-card);
+}
+
+.pg-card-header {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--pg-border-soft);
+  border-radius: 12px 12px 0 0;
+}
+
+/* Metric card */
+.pg-metric-card {
+  background: var(--pg-white);
+  border: 1px solid var(--pg-border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-card);
+  padding: 16px 20px 14px;
+  transition: box-shadow 0.15s ease;
+}
+
+.pg-metric-card:hover {
+  box-shadow: var(--shadow-raised);
+}
+
+/* Section header — tinted card top */
+.pg-section-header {
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--pg-border-soft);
+  border-radius: 12px 12px 0 0;
+  background: var(--gradient-mist);
+}
+
+.pg-section-header-navy {
+  padding: 10px 20px;
+  border-bottom: 1px solid rgba(30,58,95,0.12);
+  border-radius: 12px 12px 0 0;
+  background: linear-gradient(135deg, rgba(30,58,95,0.06) 0%, rgba(61,107,158,0.06) 100%);
+}
+
+/* Stat row item */
+.pg-stat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--pg-border-soft);
+  transition: background 0.1s;
+}
+.pg-stat-row:last-child { border-bottom: none; }
+.pg-stat-row:hover { background: rgba(242, 245, 249, 0.6); }
+
+/* Badge */
+.pg-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  line-height: 1.4;
+}
+
+/* Action tile — premium quick action */
+.pg-action-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 18px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--pg-border);
+  background: var(--pg-white);
+  box-shadow: var(--shadow-xs);
+  text-decoration: none;
+  transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+  cursor: pointer;
+}
+
+.pg-action-tile:hover {
+  box-shadow: var(--shadow-raised);
+  border-color: var(--pg-border-focus);
+  transform: translateY(-1px);
+}
+
+.pg-action-tile:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-card);
+}
+
+/* ── Role atmosphere backgrounds ──────────────────────────────────── */
+
+/* Executive / Owner — dark, strategic, calm */
+.pg-atm-executive {
+  background: linear-gradient(160deg, #1a2d42 0%, #1e3a5f 60%, #243b55 100%);
+}
+
+/* Compliance / Legal — structured, cool, authoritative */
+.pg-atm-compliance {
+  background: linear-gradient(160deg, #1c2f44 0%, #1e3a5f 100%);
+}
+
+/* Field Leadership — operational, energized */
+.pg-atm-leadership {
+  background: linear-gradient(160deg, #1e3a5f 0%, #2d4f73 60%, #1e3a5f 100%);
+}
+
+/* Field Staff — calm, open, supportive */
+.pg-atm-staff {
+  background: linear-gradient(160deg, #2a4a6a 0%, #3d6b9e 100%);
+}
+
+/* ── Navigation refinements ───────────────────────────────────────── */
+
+.pg-nav-link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: #4a5568;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: color 0.12s, background 0.12s;
+}
+
+.pg-nav-link:hover {
+  color: var(--pg-navy);
+  background: rgba(30, 58, 95, 0.06);
+}
+
+.pg-nav-link.active {
+  color: var(--pg-steel);
+  background: rgba(61, 107, 158, 0.08);
+}
+
+/* ── Scrollbar (webkit) ───────────────────────────────────────────── */
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(30, 58, 95, 0.15);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(30, 58, 95, 0.25);
+}
+
+/* ── Focus ring ───────────────────────────────────────────────────── */
+
+:focus-visible {
+  outline: 2px solid var(--pg-steel);
+  outline-offset: 2px;
+}
+
+/* ── Skeleton animation ───────────────────────────────────────────── */
+
+@keyframes pg-shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+.pg-skeleton {
+  background: linear-gradient(
+    90deg,
+    #e8eef4 25%,
+    #f2f5f9 50%,
+    #e8eef4 75%
+  );
+  background-size: 800px 100%;
+  animation: pg-shimmer 1.5s infinite linear;
+  border-radius: 6px;
+}
+
+/* ── Transitions ──────────────────────────────────────────────────── */
+
+.pg-transition {
+  transition: all 0.15s ease;
+}
+
+/* ── Atmospheric overlay (for role-specific hero areas) ───────────── */
+.pg-atm-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Table refinement ─────────────────────────────────────────────── */
+.pg-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.pg-table th {
+  text-align: left;
+  padding: 10px 16px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--pg-text-muted);
+  background: #f8fafc;
+  border-bottom: 1px solid var(--pg-border);
+}
+
+.pg-table td {
+  padding: 10px 16px;
+  color: var(--pg-text-sub);
+  border-bottom: 1px solid var(--pg-border-soft);
+}
+
+.pg-table tr:last-child td { border-bottom: none; }
+.pg-table tr:hover td { background: rgba(242, 245, 249, 0.5); }

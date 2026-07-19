@@ -14,8 +14,12 @@ class Severity(str, Enum):
 
 
 class IncidentStatus(str, Enum):
+    new = "new"
     open = "open"
+    assigned = "assigned"
+    investigating = "investigating"
     in_progress = "in_progress"
+    resolved = "resolved"
     closed = "closed"
 
 
@@ -95,6 +99,10 @@ class IncidentRead(BaseModel):
     created_at: datetime
     category: str | None = None
     risk_score: int | None = None
+    operational_risk_score: int | None = None
+    risk_band: str | None = None
+    risk_contributors: dict | None = None
+    last_risk_evaluation_at: datetime | None = None
     recommendations: list[str] | None = None
     explanation: str | None = None
     explanation_meta: ExplanationMeta | None = None

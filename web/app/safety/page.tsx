@@ -141,9 +141,8 @@ export default function SafetyDashboard() {
               danger={data.open_incidents_count > 10} />
             <MetricCard label="Unresolved Corrective Actions" value={data.unresolved_corrective_actions}
               danger={data.unresolved_corrective_actions > 0} />
-            <MetricCard label="Inspection Pass Rate"
-              value={data.inspection_pass_rate != null ? `${data.inspection_pass_rate}%` : "N/A"}
-              accent={data.inspection_pass_rate != null && data.inspection_pass_rate < 80 ? "text-red-600" : "text-green-700"} />
+            <MetricCard label="Open Cases" value={data.open_incidents_count}
+              accent={data.open_incidents_count > 5 ? "text-orange-600" : "text-gray-900"} />
             <MetricCard label="Prior Year Recordables" value={data.prior_year_recordables}
               sub={`${data.year - 1}`} />
           </div>

@@ -29,11 +29,12 @@ DEFAULT_TERMINOLOGY: dict[str, str] = {
     "safety":           "Safety Lead",
     "hr":               "HR Manager",
     "benefits":         "Benefits Coordinator",
-    "legal":            "Legal",
+    "legal":            "Legal & Compliance",
     "operations":       "Operations Manager",
     "center_manager":   "Center Manager",
-    "district_manager": "District Manager",
-    "area_manager":     "Area Manager",
+    "district_manager": "District Director",
+    "area_manager":     "Area Vice President",
+    "field_staff":      "Team Member",
     # Org unit names
     "center":    "Center",
     "district":  "District",
@@ -60,7 +61,10 @@ def _get_primary_role(user: User, org_roles: set[str]) -> str:
     for role in _ROLE_PRIORITY:
         if role in org_roles:
             return role
-    return "manager"  # default — system manager with no org assignment
+    # System manager with no org assignment → field staff experience
+    if not org_roles:
+        return "field_staff"
+    return "manager"
 
 
 def _nav_config(primary_role: str, org_roles: set[str], system_role: str) -> dict:
@@ -71,22 +75,21 @@ def _nav_config(primary_role: str, org_roles: set[str], system_role: str) -> dic
     is_admin = system_role == "admin"
     is_safety = "safety" in org_roles
     is_hr = "hr" in org_roles
-    is_district_or_above = bool(
-        org_roles & {"district_manager", "area_manager"}
-    )
-    is_center = "center_manager" in org_roles
+    is_legal = "legal" in org_roles
+    is_district_or_above = bool(org_roles & {"district_manager", "area_manager"})
+    is_field_staff = primary_role == "field_staff"
 
     return {
-        "show_command":    is_admin or is_district_or_above or "operations" in org_roles,
-        "show_safety_intel": is_admin or is_safety or is_district_or_above,
-        "show_osha":       is_admin or is_safety or is_hr,
-        "show_cases":      True,
-        "show_map":        is_admin or is_safety or is_district_or_above,
-        "show_automation": is_admin,
-        "show_field_ops":  True,
-        "show_analytics":  is_admin or is_safety,
+        "show_command":       is_admin or is_district_or_above or "operations" in org_roles,
+        "show_safety_intel":  is_admin or is_safety or is_district_or_above,
+        "show_osha":          is_admin or is_safety or is_hr or is_legal,
+        "show_cases":         not is_field_staff,
+        "show_map":           is_admin or is_safety or is_district_or_above,
+        "show_automation":    is_admin,
+        "show_field_ops":     True,
+        "show_analytics":     is_admin or is_safety,
         "show_organizations": is_admin,
-        "show_my_shift":   True,
+        "show_my_shift":      True,
     }
 
 
@@ -95,23 +98,23 @@ def _quick_actions(primary_role: str) -> list[dict]:
     actions: dict[str, list[dict]] = {
         "admin": [
             {"label": "Report Incident",     "href": "/mobile/incident", "icon": "⚠️",  "color": "red"    },
-            {"label": "Start Inspection",    "href": "/mobile/inspect",  "icon": "✅",  "color": "green"  },
             {"label": "Command Center",      "href": "/command",         "icon": "🖥️",   "color": "indigo" },
             {"label": "Safety Intelligence", "href": "/safety",          "icon": "🛡️",   "color": "purple" },
             {"label": "OSHA Reports",        "href": "/osha",            "icon": "📋",  "color": "blue"   },
+            {"label": "Case Management",     "href": "/cases",           "icon": "📁",  "color": "orange" },
             {"label": "Manage Users",        "href": "/settings/users",  "icon": "👥",  "color": "gray"   },
         ],
         "manager": [
-            {"label": "Report Incident", "href": "/mobile/incident", "icon": "⚠️",  "color": "red"   },
-            {"label": "My Cases",        "href": "/cases",           "icon": "📁",  "color": "indigo"},
-            {"label": "My Work Queue",   "href": "/work",            "icon": "📋",  "color": "blue"  },
-            {"label": "Start Inspection","href": "/mobile/inspect",  "icon": "✅",  "color": "green" },
+            {"label": "Report Incident",     "href": "/mobile/incident", "icon": "⚠️",  "color": "red"   },
+            {"label": "My Cases",            "href": "/cases",           "icon": "📁",  "color": "indigo"},
+            {"label": "My Work Queue",       "href": "/work",            "icon": "📋",  "color": "blue"  },
+            {"label": "OSHA Reports",        "href": "/osha",            "icon": "📋",  "color": "green" },
         ],
         "safety": [
             {"label": "Safety Dashboard",    "href": "/safety",          "icon": "🛡️",   "color": "purple"},
-            {"label": "Start Inspection",    "href": "/mobile/inspect",  "icon": "✅",  "color": "green" },
             {"label": "OSHA Reports",        "href": "/osha",            "icon": "📋",  "color": "blue"  },
             {"label": "Report Incident",     "href": "/mobile/incident", "icon": "⚠️",  "color": "red"   },
+            {"label": "Case Management",     "href": "/cases",           "icon": "📁",  "color": "indigo"},
             {"label": "Audit Search",        "href": "/osha/search",     "icon": "🔍",  "color": "gray"  },
         ],
         "hr": [
@@ -122,15 +125,15 @@ def _quick_actions(primary_role: str) -> list[dict]:
         ],
         "center_manager": [
             {"label": "Report Incident",     "href": "/mobile/incident", "icon": "⚠️",  "color": "red"   },
-            {"label": "Start Inspection",    "href": "/mobile/inspect",  "icon": "✅",  "color": "green" },
-            {"label": "My Tasks",            "href": "/work",            "icon": "📋",  "color": "blue"  },
             {"label": "Active Cases",        "href": "/cases",           "icon": "📁",  "color": "indigo"},
+            {"label": "My Work Queue",       "href": "/work",            "icon": "📋",  "color": "blue"  },
+            {"label": "OSHA Reports",        "href": "/osha",            "icon": "📋",  "color": "green" },
         ],
         "district_manager": [
             {"label": "District Overview",   "href": "/command",         "icon": "🖥️",   "color": "indigo"},
             {"label": "Risk Map",            "href": "/map",             "icon": "🗺️",   "color": "blue"  },
             {"label": "Escalations",         "href": "/cases",           "icon": "⬆",   "color": "orange"},
-            {"label": "Inspections",         "href": "/mobile/inspect",  "icon": "✅",  "color": "green" },
+            {"label": "OSHA Reports",        "href": "/osha",            "icon": "📋",  "color": "gray"  },
         ],
         "area_manager": [
             {"label": "Area Command",        "href": "/command",         "icon": "🖥️",   "color": "indigo"},
@@ -141,8 +144,19 @@ def _quick_actions(primary_role: str) -> list[dict]:
         "operations": [
             {"label": "Work Queue",          "href": "/work",            "icon": "📋",  "color": "blue"  },
             {"label": "Active Cases",        "href": "/cases",           "icon": "📁",  "color": "indigo"},
-            {"label": "Inspections",         "href": "/mobile/inspect",  "icon": "✅",  "color": "green" },
             {"label": "Report Incident",     "href": "/mobile/incident", "icon": "⚠️",  "color": "red"   },
+            {"label": "OSHA Reports",        "href": "/osha",            "icon": "📋",  "color": "green" },
+        ],
+        "legal": [
+            {"label": "OSHA Review Queue",   "href": "/osha",            "icon": "⚖️",  "color": "blue"  },
+            {"label": "Audit Search",        "href": "/osha/search",     "icon": "🔍",  "color": "gray"  },
+            {"label": "Case Review",         "href": "/cases",           "icon": "📁",  "color": "indigo"},
+            {"label": "Annual Postings",     "href": "/osha/postings",   "icon": "📋",  "color": "green" },
+        ],
+        "field_staff": [
+            {"label": "Report Incident",     "href": "/mobile/incident", "icon": "⚠️",  "color": "red"   },
+            {"label": "My Follow-Ups",       "href": "/work",            "icon": "📋",  "color": "blue"  },
+            {"label": "Scan Case QR",        "href": "/mobile/scan",     "icon": "📷",  "color": "indigo"},
         ],
     }
     fallback = actions.get("manager")
@@ -195,13 +209,15 @@ def get_workspace_profile(
 
     _SUBTITLES = {
         "admin":            "Full platform access · All modules enabled",
-        "safety":           "OSHA automation · Inspection management · Hazard tracking",
+        "safety":           "OSHA compliance · Hazard tracking · Safety intelligence",
         "hr":               "Employee injury queue · Workers comp · Return-to-work",
+        "legal":            "OSHA defensibility · Case review · Audit trail · Documentation integrity",
         "center_manager":   "Center-level incidents · Corrective actions · Daily operations",
         "district_manager": "District risk oversight · Center comparison · Escalation management",
         "area_manager":     "Area-wide intelligence · OSHA trends · Enterprise risk",
         "operations":       "Work queue · Case management · Operational workflows",
         "manager":          "Operational safety platform",
+        "field_staff":      "Report incidents · Track your reports · Respond to follow-ups",
     }
 
     return WorkspaceProfile(

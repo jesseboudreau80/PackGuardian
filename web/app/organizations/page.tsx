@@ -64,7 +64,7 @@ const ORG_ROLES = [
 const ROLE_LABELS: Record<string, string> = {
   admin: "Admin", safety: "Safety", hr: "HR", benefits: "Benefits",
   legal: "Legal", operations: "Operations", center_manager: "Center Manager",
-  district_manager: "District Manager", area_manager: "Area Manager",
+  district_manager: "District Director", area_manager: "Area VP",
 };
 
 // ── Main page ─────────────────────────────────────────────────────────────────

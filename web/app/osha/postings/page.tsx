@@ -51,8 +51,6 @@ export default function PostingsPage() {
   const [genCenter, setGenCenter] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  if (!isAuthenticated) { router.push("/login?from=/osha/postings"); return null; }
-
   async function fetchPostings() {
     try {
       const r = await axios.get<Posting[]>(`${API_URL}/safety/postings`);
@@ -62,7 +60,10 @@ export default function PostingsPage() {
     } finally { setLoading(false); }
   }
 
-  useEffect(() => { fetchPostings(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!isAuthenticated) { router.push("/login?from=/osha/postings"); return; }
+    fetchPostings();
+  }, [isAuthenticated]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function generate(e: FormEvent) {
     e.preventDefault(); setGenerating(true); setError(null);
@@ -211,7 +212,7 @@ export default function PostingsPage() {
                 {expanded === p.id && snap && (
                   <div className="border-t border-gray-100 px-5 py-4 bg-gray-50">
                     <p className="text-xs font-semibold text-gray-600 mb-3 uppercase tracking-wide">
-                      Form 300A Summary — Year {snap.year} Snapshot
+                      Form 300A Summary — Year {String(snap.year)} Snapshot
                     </p>
                     <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
                       {[
@@ -224,7 +225,7 @@ export default function PostingsPage() {
                       ].map(([label, val]) => (
                         <div key={String(label)} className="bg-white rounded-lg border border-gray-200 px-3 py-2 text-center">
                           <p className="text-lg font-bold text-gray-900">{String(val)}</p>
-                          <p className="text-xs text-gray-500">{label}</p>
+                          <p className="text-xs text-gray-500">{String(label)}</p>
                         </div>
                       ))}
                     </div>

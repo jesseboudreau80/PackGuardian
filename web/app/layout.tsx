@@ -4,6 +4,7 @@ import TenantProvider from "./context/TenantContext";
 import AuthProvider from "./context/AuthContext";
 import WorkspaceProvider from "./context/WorkspaceContext";
 import AppHeader from "./components/AppHeader";
+import MainWrapper from "./components/MainWrapper";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -36,7 +37,7 @@ export default function RootLayout({
           <AuthProvider>
             <WorkspaceProvider>
               <AppHeader />
-              <main className="max-w-5xl mx-auto px-6 py-8">{children}</main>
+              <MainWrapper>{children}</MainWrapper>
             </WorkspaceProvider>
           </AuthProvider>
         </TenantProvider>

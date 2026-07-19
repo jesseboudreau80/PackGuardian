@@ -40,6 +40,7 @@ export function useWebSocket(token: string | null | undefined): {
 
   useEffect(() => {
     if (!token) return;
+    const safeToken = token;
     unmounted.current = false;
 
     let ws: WebSocket;
@@ -47,7 +48,7 @@ export function useWebSocket(token: string | null | undefined): {
     let retryTimer: ReturnType<typeof setTimeout>;
 
     function connect() {
-      const url = `${WS_BASE}/ws?token=${encodeURIComponent(token)}`;
+      const url = `${WS_BASE}/ws?token=${encodeURIComponent(safeToken)}`;
       ws = new WebSocket(url);
 
       ws.onopen = () => {

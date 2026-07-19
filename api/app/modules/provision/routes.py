@@ -150,6 +150,15 @@ def onboard_tenant(
         db.commit()
         logger.info("[packguardian][provision] Tenant provisioned: id=%s name=%s trial=%s",
                     tenant.id, tenant.name, payload.is_trial)
+        try:
+            from app.services.slack import pg_slack
+            pg_slack.tenant_onboarded(
+                tenant_name=payload.company_name,
+                admin_email=payload.admin_email,
+                is_trial=payload.is_trial,
+            )
+        except Exception:
+            pass
         return OnboardResponse(
             tenant_id=tenant.id,
             admin_user_id=admin.id,
@@ -230,8 +239,11 @@ def advance_step(
         TenantSettings.tenant_id == current_user.tenant_id
     ).first()
     if not ts:
-        ts = TenantSettings(tenant_id=current_user.tenant_id,
-                            onboarding_step=step)
+        ts = TenantSettings(
+            tenant_id=current_user.tenant_id,
+            onboarding_step=step,
+            onboarding_completed=(step >= 5),
+        )
         db.add(ts)
     else:
         ts.onboarding_step = max(ts.onboarding_step, step)
@@ -486,24 +498,175 @@ def seed_demo(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
-    """Seed realistic demo data for trial tenants."""
+    """Seed realistic enterprise demo data. Admin-only."""
     from .demo import seed_demo_data
 
-    ts = db.query(TenantSettings).filter(
-        TenantSettings.tenant_id == current_user.tenant_id
-    ).first()
-    if ts and not ts.is_trial and current_user.role != "admin":
-        raise HTTPException(
-            status_code=403,
-            detail="Demo data seeding is only available for trial tenants.",
-        )
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
     try:
         counts = seed_demo_data(db, current_user.tenant_id, current_user.id)
         db.commit()
         logger.info("[packguardian][provision] Demo data seeded tenant=%s",
                     current_user.tenant_id)
+        try:
+            from app.services.slack import pg_slack
+            pg_slack.demo_seeded(
+                incidents=counts.get("incidents", 0),
+                cases=counts.get("cases", 0),
+                centers=counts.get("centers", 0),
+            )
+        except Exception:
+            pass
         return counts
     except Exception as exc:
         db.rollback()
         logger.exception("[provision] Demo seed failed tenant=%s", current_user.tenant_id)
         raise HTTPException(status_code=500, detail="Demo seed failed") from exc
+
+
+@router.post("/backfill-risk-scores", response_model=dict)
+def backfill_risk_scores(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Recompute operational_risk_score for all tenant incidents. Admin-only."""
+    from app.modules.osha.models import Incident
+    from app.modules.signals.risk_scoring import apply_risk_score
+
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    incidents = db.query(Incident).filter(Incident.tenant_id == current_user.tenant_id).all()
+    updated = 0
+    for inc in incidents:
+        try:
+            apply_risk_score(db, inc.id, current_user.tenant_id)
+            updated += 1
+        except Exception:
+            pass
+    db.commit()
+    return {"backfilled": updated}
+
+
+@router.post("/reset-demo", response_model=dict)
+def reset_demo(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """
+    Wipe all operational data for this tenant (preserving the calling admin user)
+    then re-seed the full enterprise demo. Admin-only.
+    """
+    from .demo import purge_demo_data, seed_demo_data
+
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    # Guard: only run against the designated demo tenant
+    from app.core.config import settings
+    import uuid as _uuid
+    try:
+        demo_tid = _uuid.UUID(settings.demo_tenant_id)
+    except ValueError:
+        demo_tid = None
+    if demo_tid and current_user.tenant_id != demo_tid:
+        raise HTTPException(
+            status_code=403,
+            detail="Demo reset is only available on the demo tenant. "
+                   "This action would wipe real operational data."
+        )
+    try:
+        purge_demo_data(db, current_user.tenant_id, keep_user_id=current_user.id)
+        counts = seed_demo_data(db, current_user.tenant_id, current_user.id)
+        db.commit()
+        logger.info("[packguardian][provision] Demo data reset tenant=%s",
+                    current_user.tenant_id)
+        return {"reset": True, **counts}
+    except Exception as exc:
+        db.rollback()
+        logger.exception("[provision] Demo reset failed tenant=%s", current_user.tenant_id)
+        raise HTTPException(status_code=500, detail="Demo reset failed") from exc
+
+
+@router.get("/diagnostics")
+def get_diagnostics(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Admin-only system diagnostics for support and observability."""
+    import sys
+    import platform
+    from datetime import timedelta
+    from sqlalchemy import text
+
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    tid = current_user.tenant_id
+    now = datetime.now(timezone.utc)
+
+    # DB connection check
+    try:
+        db.execute(text("SELECT 1"))
+        db_ok = True
+    except Exception:
+        db_ok = False
+
+    # Tenant data counts
+    from app.modules.osha.models import Incident
+    from app.modules.cases.models import IncidentCase
+    from app.modules.auth.models import User as UserModel
+
+    incident_count = db.query(Incident).filter(Incident.tenant_id == tid).count()
+    case_count     = db.query(IncidentCase).filter(IncidentCase.tenant_id == tid).count()
+    user_count     = db.query(UserModel).filter(UserModel.tenant_id == tid).count()
+
+    # CA count
+    try:
+        from app.modules.corrective_actions.models import CorrectiveAction
+        ca_count = db.query(CorrectiveAction).filter(CorrectiveAction.tenant_id == tid).count()
+    except Exception:
+        ca_count = -1
+
+    # Signal state
+    try:
+        from app.modules.signals.models import SafetySignal
+        active_signals = db.query(SafetySignal).filter(
+            SafetySignal.tenant_id == tid,
+            SafetySignal.dismissed == False,  # noqa: E712
+        ).count()
+        last_signal = db.query(SafetySignal).filter(
+            SafetySignal.tenant_id == tid,
+        ).order_by(SafetySignal.detected_at.desc()).first()
+        last_signal_refresh = last_signal.detected_at.isoformat() if last_signal else None
+    except Exception:
+        active_signals = -1
+        last_signal_refresh = None
+
+    # Onboarding state
+    try:
+        ts = db.query(TenantSettings).filter(TenantSettings.tenant_id == tid).first()
+        onboarding_step = ts.onboarding_step if ts else 0
+        onboarding_complete = ts.onboarding_completed if ts else False
+    except Exception:
+        onboarding_step = -1
+        onboarding_complete = False
+
+    return {
+        "generated_at": now.isoformat(),
+        "api_status": "ok",
+        "db_connection": db_ok,
+        "python_version": sys.version.split()[0],
+        "platform": platform.system(),
+        "tenant_id": str(tid),
+        "data": {
+            "incidents": incident_count,
+            "cases": case_count,
+            "users": user_count,
+            "corrective_actions": ca_count,
+            "active_signals": active_signals,
+            "last_signal_refresh": last_signal_refresh,
+        },
+        "onboarding": {
+            "step": onboarding_step,
+            "complete": onboarding_complete,
+        },
+    }

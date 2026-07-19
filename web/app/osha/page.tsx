@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import axios from "axios";
 import type {
   Form300Log,
@@ -156,9 +156,8 @@ export default function OshaReportingPage() {
                   </thead>
                   <tbody>
                     {log?.entries.map((entry) => (
-                      <>
+                      <Fragment key={entry.incident_id}>
                         <tr
-                          key={entry.incident_id}
                           onClick={() => load301(entry.incident_id)}
                           className="border-b border-gray-100 hover:bg-indigo-50 cursor-pointer"
                         >
@@ -180,13 +179,13 @@ export default function OshaReportingPage() {
 
                         {/* Inline Form 301 detail */}
                         {selected301?.incident_id === entry.incident_id && (
-                          <tr key={`301-${entry.incident_id}`}>
+                          <tr>
                             <td colSpan={8} className="bg-indigo-50 px-6 py-4">
                               <Form301Detail form={selected301} />
                             </td>
                           </tr>
                         )}
-                      </>
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>

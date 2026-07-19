@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.modules.auth.dependencies import require_admin
+from app.modules.auth.dependencies import get_current_user, require_admin
 from app.modules.auth.models import User
 from app.modules.auth.schemas import UserCreate, UserRead
 from app.modules.auth.security import hash_password
@@ -17,11 +17,11 @@ router = APIRouter(prefix="/users", tags=["Users"])
 @router.get("", response_model=list[UserRead])
 def list_users(
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    current_user: User = Depends(get_current_user),
 ) -> list[UserRead]:
     users = (
         db.query(User)
-        .filter(User.tenant_id == admin.tenant_id)
+        .filter(User.tenant_id == current_user.tenant_id)
         .order_by(User.created_at)
         .all()
     )

@@ -58,6 +58,14 @@ class Incident(Base):
     organization_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True
     )
+    # Operational risk pipeline — populated by compute_risk_score() on incident events.
+    operational_risk_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    risk_contributors: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    risk_band: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    last_risk_evaluation_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    signal_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=0)
 
 
 class IncidentAuditLog(Base):

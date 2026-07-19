@@ -91,6 +91,7 @@ export default function EvidenceTab({ caseId, onFileUploaded }: Props) {
   const [previewing, setPreviewing] = useState<EvidenceFile | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   // Upload state
   const [dragging, setDragging] = useState(false);
@@ -145,8 +146,8 @@ export default function EvidenceTab({ caseId, onFileUploaded }: Props) {
   }
 
   async function deleteFile(fileId: string) {
-    if (!confirm("Delete this evidence file? This cannot be undone.")) return;
     setDeletingId(fileId);
+    setConfirmDeleteId(null);
     try {
       await axios.delete(`${API_URL}/evidence/files/${fileId}`);
       setFiles((prev) => prev.filter((f) => f.id !== fileId));
@@ -251,10 +252,23 @@ export default function EvidenceTab({ caseId, onFileUploaded }: Props) {
                       {expandedId === f.id ? "▲" : "▼"}
                     </button>
                   )}
-                  <button onClick={() => deleteFile(f.id)} disabled={deletingId === f.id}
-                    className="text-xs text-red-400 hover:text-red-600 disabled:opacity-50">
-                    {deletingId === f.id ? "…" : "✕"}
-                  </button>
+                  {confirmDeleteId === f.id ? (
+                    <span className="flex items-center gap-1.5">
+                      <button onClick={() => deleteFile(f.id)} disabled={deletingId === f.id}
+                        className="text-xs text-red-600 font-semibold hover:underline">
+                        Delete
+                      </button>
+                      <button onClick={() => setConfirmDeleteId(null)}
+                        className="text-xs text-gray-400 hover:text-gray-600">
+                        Cancel
+                      </button>
+                    </span>
+                  ) : (
+                    <button onClick={() => setConfirmDeleteId(f.id)} disabled={deletingId === f.id}
+                      className="text-xs text-gray-400 hover:text-red-500 disabled:opacity-50 px-1">
+                      {deletingId === f.id ? "…" : "✕"}
+                    </button>
+                  )}
                 </div>
               </div>
 

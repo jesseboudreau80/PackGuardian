@@ -13,8 +13,9 @@ import { API_URL } from "../lib/api";
 const TOKEN_KEY = "pg_token";
 const ROLE_KEY = "pg_role";
 
-// Module-level interceptor — runs once on client, injects JWT into every request.
+// Module-level interceptors — run once on client.
 if (typeof window !== "undefined") {
+  // Inject JWT into every outgoing request.
   axios.interceptors.request.use((config) => {
     const token = localStorage.getItem(TOKEN_KEY);
     if (token) {
@@ -22,6 +23,24 @@ if (typeof window !== "undefined") {
     }
     return config;
   });
+
+  // On 401, clear auth state and redirect to login.
+  // This handles expired tokens without requiring per-component 401 handling.
+  axios.interceptors.response.use(
+    (response) => response,
+    (error) => {
+      if (axios.isAxiosError(error) && error.response?.status === 401) {
+        const isLoginRequest = error.config?.url?.includes("/auth/login");
+        if (!isLoginRequest) {
+          localStorage.removeItem(TOKEN_KEY);
+          localStorage.removeItem(ROLE_KEY);
+          const from = encodeURIComponent(window.location.pathname);
+          window.location.href = `/login?from=${from}&reason=session_expired`;
+        }
+      }
+      return Promise.reject(error);
+    }
+  );
 }
 
 interface AuthContextValue {
@@ -47,15 +66,22 @@ export function useAuth(): AuthContextValue {
 }
 
 export default function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(null);
-  const [role, setRole] = useState<string | null>(null);
+  // Lazy initializer reads localStorage synchronously on first render,
+  // eliminating the flash where isAuthenticated is briefly false for
+  // already-authenticated users (which caused Command Center to show errors).
+  const [token, setToken] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem(TOKEN_KEY);
+  });
+  const [role, setRole] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem(ROLE_KEY);
+  });
 
+  // Keep role in sync when token changes (e.g. tab switching)
   useEffect(() => {
-    const storedToken = localStorage.getItem(TOKEN_KEY);
-    const storedRole = localStorage.getItem(ROLE_KEY);
-    if (storedToken) setToken(storedToken);
-    if (storedRole) setRole(storedRole);
-  }, []);
+    if (!token) setRole(null);
+  }, [token]);
 
   async function login(email: string, password: string): Promise<void> {
     const res = await axios.post<{ access_token: string; role: string }>(

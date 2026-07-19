@@ -32,7 +32,7 @@ function relTime(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso), now = new Date();
   const diff = d.getTime() - now.getTime();
-  if (diff < 0) return "overdue";
+  if (diff < 0) return "follow-up needed";
   const h = Math.floor(diff / 3600000);
   if (h < 24) return `due in ${h}h`;
   return `due ${d.toLocaleDateString()}`;
@@ -88,12 +88,12 @@ export default function MobileShift() {
   );
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="p-4 space-y-4 max-w-2xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between pt-2">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">My Shift</h1>
-          <p className="text-sm text-gray-500">{data?.role_context ?? ""}</p>
+          <h1 className="text-xl font-bold" style={{ color: "var(--pg-navy)" }}>My Shift</h1>
+          <p className="text-sm" style={{ color: "var(--pg-text-muted)" }}>{data?.role_context ?? ""}</p>
         </div>
         <div className="flex items-center gap-2">
           {!online && (
@@ -125,62 +125,55 @@ export default function MobileShift() {
       )}
 
       {/* Stat grid */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         {[
-          { label: "My Cases",   value: data?.assigned_case_count ?? 0,       color: "indigo" },
-          { label: "Overdue",    value: data?.overdue_task_count ?? 0,         color: data?.overdue_task_count ? "red" : "gray" },
-          { label: "Incidents",  value: data?.active_incident_count ?? 0,      color: "orange" },
-          { label: "Inspections",value: data?.pending_inspection_count ?? 0,   color: "green" },
-        ].map(({ label, value, color }) => (
-          <div key={label} className="bg-white rounded-2xl border border-gray-200 px-4 py-3">
-            <p className="text-xs text-gray-500 font-medium">{label}</p>
-            <p className={`text-3xl font-bold mt-0.5 text-${color}-600`}>{value}</p>
+          { label: "My Cases",   value: data?.assigned_case_count ?? 0,  accent: "var(--pg-navy)" },
+          { label: "Follow-Up",  value: data?.overdue_task_count ?? 0,   accent: (data?.overdue_task_count ?? 0) > 0 ? "#c2410c" : "var(--pg-text-muted)" },
+          { label: "Incidents",  value: data?.active_incident_count ?? 0, accent: (data?.active_incident_count ?? 0) > 0 ? "#c2410c" : "var(--pg-text-muted)" },
+        ].map(({ label, value, accent }) => (
+          <div key={label} className="bg-white rounded-2xl px-4 py-3" style={{ border: "1px solid var(--pg-border)" }}>
+            <p className="text-xs font-medium" style={{ color: "var(--pg-text-muted)" }}>{label}</p>
+            <p className="text-3xl font-bold mt-0.5 tabular-nums" style={{ color: accent }}>{value}</p>
           </div>
         ))}
       </div>
 
       {/* Quick actions */}
-      <div className="grid grid-cols-2 gap-3">
-        <Link href="/mobile/incident"
-          className="flex flex-col items-center gap-2 bg-red-600 text-white rounded-2xl py-5 active:opacity-80">
-          <span className="text-3xl">⚠️</span>
-          <span className="text-sm font-semibold">Report Incident</span>
-        </Link>
-        <Link href="/mobile/inspect"
-          className="flex flex-col items-center gap-2 bg-green-600 text-white rounded-2xl py-5 active:opacity-80">
-          <span className="text-3xl">✅</span>
-          <span className="text-sm font-semibold">Start Inspection</span>
-        </Link>
-        <Link href="/mobile/scan"
-          className="flex flex-col items-center gap-2 bg-indigo-600 text-white rounded-2xl py-5 active:opacity-80">
-          <span className="text-3xl">📷</span>
-          <span className="text-sm font-semibold">Scan QR Code</span>
-        </Link>
-        <Link href="/cases"
-          className="flex flex-col items-center gap-2 bg-gray-700 text-white rounded-2xl py-5 active:opacity-80">
-          <span className="text-3xl">📋</span>
-          <span className="text-sm font-semibold">My Cases</span>
-        </Link>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        {[
+          { href: "/mobile/incident", icon: "⚠️", label: "Report Incident", bg: "rgba(220,38,38,0.9)" },
+          { href: "/mobile/scan",     icon: "📷", label: "Scan Case QR",    bg: "var(--pg-slate)" },
+          { href: "/work",            icon: "📋", label: "My Follow-Ups",   bg: "var(--pg-navy)" },
+        ].map(({ href, icon, label, bg }) => (
+          <Link key={href} href={href}
+            className="flex flex-col items-center gap-2 text-white rounded-2xl py-5 transition-opacity hover:opacity-90 active:opacity-80"
+            style={{ background: bg }}>
+            <span className="text-3xl">{icon}</span>
+            <span className="text-sm font-semibold text-center">{label}</span>
+          </Link>
+        ))}
       </div>
 
-      {/* Urgent cases */}
+      {/* Urgent cases — link to work page, not case management */}
       {data?.urgent_cases && data.urgent_cases.length > 0 && (
         <div>
-          <h2 className="text-sm font-semibold text-gray-700 mb-2">Urgent Cases</h2>
+          <h2 className="text-sm font-semibold mb-2" style={{ color: "var(--pg-text-sub)" }}>Assigned to Me</h2>
           <div className="space-y-2">
             {data.urgent_cases.map((c) => (
-              <Link key={c.id} href="/cases"
-                className="flex items-center gap-3 bg-white border border-gray-200 rounded-xl px-4 py-3 active:bg-gray-50">
+              <Link key={c.id} href="/work"
+                className="flex items-center gap-3 bg-white border rounded-xl px-4 py-3 transition-colors hover:bg-gray-50 active:bg-gray-50"
+                style={{ borderColor: "var(--pg-border)" }}>
                 <span className={`w-3 h-3 rounded-full flex-shrink-0 ${PRIORITY_COLORS[c.priority] ?? "bg-gray-400"}`} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-800 capitalize">
+                  <p className="text-sm font-medium capitalize" style={{ color: "var(--pg-text)" }}>
                     {c.priority} · {c.status.replace(/_/g, " ")}
                     {c.escalation_level >= 1 && ` ⬆${c.escalation_level}`}
                   </p>
-                  <p className="text-xs text-gray-400 font-mono">{c.incident_id.slice(0, 8)}…</p>
+                  <p className="text-xs font-mono" style={{ color: "var(--pg-text-muted)" }}>{c.incident_id.slice(0, 8)}…</p>
                 </div>
                 {c.due_date && (
-                  <span className={`text-xs flex-shrink-0 ${new Date(c.due_date) < new Date() ? "text-red-500" : "text-gray-400"}`}>
+                  <span className={`text-xs flex-shrink-0 ${new Date(c.due_date) < new Date() ? "text-red-500" : ""}`}
+                    style={{ color: new Date(c.due_date) < new Date() ? undefined : "var(--pg-text-muted)" }}>
                     {relTime(c.due_date)}
                   </span>
                 )}
@@ -197,7 +190,7 @@ export default function MobileShift() {
           <div className="space-y-2">
             {data.my_tasks.map((t) => (
               <div key={t.id} className={`flex items-center gap-3 bg-white border rounded-xl px-4 py-3 ${t.overdue ? "border-red-200" : "border-gray-200"}`}>
-                <span className="text-lg">{t.overdue ? "🔴" : "☐"}</span>
+                <span className="text-lg">{t.overdue ? "⏰" : "☐"}</span>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-gray-800">{t.title}</p>
                   {t.due_date && (

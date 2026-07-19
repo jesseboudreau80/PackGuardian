@@ -15,3 +15,25 @@ node_modules/
 web/.env.local
 api/.env
 
+### hygiene-standard ###
+venv/
+.venv/
+env/
+ENV/
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+.next/
+dist/
+build/
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+*.log
+*.db
+*.sqlite
+*.sqlite3
+.DS_Store

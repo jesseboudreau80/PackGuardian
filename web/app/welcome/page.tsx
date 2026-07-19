@@ -17,7 +17,7 @@ const ITEM_ACTIONS: Record<string, { label: string; href: string }> = {
   org:        { label: "Set up org →",          href: "/organizations"     },
   users:      { label: "Invite team →",          href: "/settings/users"   },
   incident:   { label: "Report incident →",      href: "/mobile/incident"  },
-  inspection: { label: "Start inspection →",     href: "/mobile/inspect"   },
+  inspection: { label: "View OSHA reports →",     href: "/osha"             },
   osha:       { label: "Configure postings →",   href: "/osha/postings"    },
 };
 
@@ -125,10 +125,10 @@ export default function WelcomePage() {
       {/* Quick actions */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { href: "/mobile/incident", icon: "⚠️", label: "Report Incident",   color: "bg-red-600"    },
-          { href: "/mobile/inspect",  icon: "✅", label: "Start Inspection",  color: "bg-green-600"  },
-          { href: "/osha",            icon: "📋", label: "OSHA Reports",      color: "bg-indigo-600" },
-          { href: "/safety",          icon: "🛡️", label: "Safety Intel",      color: "bg-purple-600" },
+          { href: "/mobile/incident", icon: "⚠️", label: "Report Incident", color: "bg-red-600"    },
+          { href: "/cases",           icon: "📁", label: "Case Management", color: "bg-indigo-600" },
+          { href: "/osha",            icon: "📋", label: "OSHA Reports",    color: "bg-blue-600"   },
+          { href: "/safety",          icon: "🛡️", label: "Safety Intel",    color: "bg-purple-600" },
         ].map(({ href, icon, label, color }) => (
           <Link key={href} href={href}
             className={`${color} text-white rounded-2xl py-5 flex flex-col items-center gap-2 hover:opacity-90 transition-opacity`}>
@@ -145,7 +145,7 @@ export default function WelcomePage() {
             <div>
               <h3 className="font-semibold text-amber-800">Trial Mode — Load Demo Data</h3>
               <p className="text-sm text-amber-700 mt-0.5">
-                Populate your workspace with realistic sample incidents, inspections, and cases to explore the platform.
+                Populate your workspace with realistic sample incidents, OSHA records, and cases to explore the platform.
               </p>
             </div>
             <button onClick={seedDemo} disabled={seeding}
@@ -155,8 +155,7 @@ export default function WelcomePage() {
           </div>
           {seedResult && (
             <p className="text-sm text-amber-700 mt-3">
-              ✓ Created {seedResult.incidents} incidents, {seedResult.cases} cases,
-              {seedResult.inspections} inspections, {seedResult.centers} centers.
+              ✓ Created {seedResult.incidents} incidents, {seedResult.cases} cases, {seedResult.centers} centers.
             </p>
           )}
         </div>

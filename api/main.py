@@ -34,6 +34,7 @@ from app.modules.hub.routes import router_command, router_search, router_work
 from app.modules.notifications import models as _notification_models  # noqa: F401 — registers Notification
 from app.modules.notifications.routes import router as notifications_router
 from app.modules.ws.routes import router as ws_router
+from app.modules.ai.routes import router as ai_router
 from app.modules.osha import models as _osha_models  # noqa: F401 — registers ORM models
 from app.modules.osha.analytics import router as analytics_router
 from app.modules.osha.dashboard import router as dashboard_router
@@ -45,6 +46,13 @@ from app.modules.map.routes import router as map_router
 from app.modules.organizations import models as _org_models  # noqa: F401 — registers Organization, OrganizationMember, OrgAuditLog
 from app.modules.organizations.routes import router as organizations_router
 from app.modules.tenant.routes import router as tenant_router
+from app.modules.corrective_actions import models as _ca_models  # noqa: F401 — registers CorrectiveAction
+from app.modules.corrective_actions.routes import router as ca_router
+from app.modules.witness import models as _witness_models  # noqa: F401 — registers WitnessStatement
+from app.modules.witness.routes import router as witness_router
+from app.modules.signals import models as _signal_models  # noqa: F401 — registers SafetySignal
+from app.modules.signals.routes import router as signals_router
+from app.modules.internal.routes import router as internal_router
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 _log_file = os.getenv("LOG_FILE")
@@ -139,6 +147,15 @@ def _validate_db() -> None:
 
 
 _validate_db()
+
+# Fail loudly if JWT secret is still the default — protects against lost .env on redeploy
+if settings.jwt_secret == "CHANGE-THIS-SECRET-IN-PRODUCTION":
+    logger.critical(
+        "[packguardian] JWT_SECRET is using the insecure default. "
+        "Set JWT_SECRET in api/.env before running in any environment."
+    )
+    sys.exit(1)
+
 Base.metadata.create_all(bind=engine)
 
 
@@ -179,6 +196,23 @@ def _migrate_tenant_settings_terminology() -> None:
 
 
 _migrate_tenant_settings_terminology()
+
+
+def _migrate_incident_risk_fields() -> None:
+    """Idempotent: add extended risk fields to incidents table."""
+    with engine.connect() as conn:
+        for stmt in [
+            "ALTER TABLE incidents ADD COLUMN IF NOT EXISTS operational_risk_score INTEGER",
+            "ALTER TABLE incidents ADD COLUMN IF NOT EXISTS risk_contributors JSONB",
+            "ALTER TABLE incidents ADD COLUMN IF NOT EXISTS signal_count INTEGER DEFAULT 0",
+            "ALTER TABLE incidents ADD COLUMN IF NOT EXISTS risk_band VARCHAR",
+            "ALTER TABLE incidents ADD COLUMN IF NOT EXISTS last_risk_evaluation_at TIMESTAMPTZ",
+        ]:
+            conn.execute(text(stmt))
+        conn.commit()
+
+
+_migrate_incident_risk_fields()
 
 
 def _seed_default_tenant() -> None:
@@ -272,6 +306,11 @@ app.include_router(workspace_router)
 app.include_router(mobile_router)
 app.include_router(qr_router)
 app.include_router(ws_router)
+app.include_router(ai_router)
+app.include_router(ca_router)
+app.include_router(witness_router)
+app.include_router(signals_router)
+app.include_router(internal_router)
 
 
 @app.get("/")
@@ -281,4 +320,68 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "service": "packguardian", "version": settings.app_version}
+
+
+@app.get("/whoami")
+def whoami():
+    """Identity endpoint — confirms which app is bound to this port."""
+    return {
+        "app":         "PackGuardian API",
+        "version":     settings.app_version,
+        "port":        8105,
+        "environment": "production",
+        "owner":       "jesse",
+    }
+
+
+@app.get("/.well-known/aegis-meta")
+def aegis_meta():
+    """Aegis Pack Specification V2 — machine-readable identity and capability declaration."""
+    import os
+    from datetime import datetime, timezone
+    return {
+        "pack_id":              "packguardian",
+        "pack_name":            "PackGuardian",
+        "version":              settings.app_version,
+        "environment":          "production",
+        "frontend_port":        3005,
+        "backend_port":         8105,
+        "auth_required":        True,
+        "governance_enabled":   True,
+        "replay_supported":     False,
+        "observability_supported": True,
+        "systemd_service":      "packguardian.service",
+        "tunnel_name":          "reselleros",
+        "public_url":           "https://packguardian.jesseboudreau.com",
+        "api_url":              "https://packguardian-api.jesseboudreau.com",
+        "health_endpoint":      "/health",
+        "meta_endpoint":        "/.well-known/aegis-meta",
+        "uptime_s":             None,
+        "build_sha":            os.environ.get("GIT_SHA", None),
+        "reported_at":          datetime.now(timezone.utc).isoformat(),
+        "owner":                "jesse",
+        "doctrine_version":     "2026-05-30",
+        "runtime_type":         "nextjs+fastapi",
+        "stack":                {"frontend": "Next.js 15", "backend": "FastAPI", "db": "PostgreSQL"},
+        "capabilities":         [
+            "osha_compliance",
+            "incident_management",
+            "case_management",
+            "corrective_actions",
+            "safety_intelligence",
+            "qr_case_tracking",
+            "safety_tips",
+            "multi_tenant",
+            "role_hierarchy",
+            "websocket_events",
+            "slack_lab_channel",
+        ],
+        "slack_channel":        "packguardian-lab",
+        "aegis_integrations": {
+            "iris_channel":     "packguardian-lab",
+            "event_emission":   False,
+            "hermes_memory":    False,
+            "pack_registered":  False,
+        },
+    }

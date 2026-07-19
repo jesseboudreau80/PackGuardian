@@ -18,35 +18,36 @@ interface TenantUser {
   email: string;
 }
 
-const EVENT_ICONS: Record<string, string> = {
-  case_created:     "✦",
-  status_changed:   "⇄",
-  assigned:         "→",
-  comment:          "💬",
-  comment_added:    "💬",
-  evidence_upload:  "📎",
-  evidence_uploaded:"📎",
-  task_created:     "☐",
-  task_completed:   "✓",
-  task_reopened:    "↺",
-  escalated:        "⬆",
-  priority_changed: "◈",
-  closed:           "✕",
+const EVENT_META: Record<string, { icon: string; color: string; bg: string }> = {
+  case_created:                       { icon: "✦", color: "text-indigo-700", bg: "bg-indigo-100" },
+  status_changed:                     { icon: "⇄", color: "text-blue-700",   bg: "bg-blue-100" },
+  assigned:                           { icon: "→", color: "text-cyan-700",   bg: "bg-cyan-100" },
+  comment:                            { icon: "💬", color: "text-gray-600",  bg: "bg-gray-100" },
+  comment_added:                      { icon: "💬", color: "text-gray-600",  bg: "bg-gray-100" },
+  evidence_upload:                    { icon: "📎", color: "text-amber-700", bg: "bg-amber-100" },
+  evidence_uploaded:                  { icon: "📎", color: "text-amber-700", bg: "bg-amber-100" },
+  task_created:                       { icon: "☐",  color: "text-green-600", bg: "bg-green-50" },
+  task_completed:                     { icon: "✓",  color: "text-green-700", bg: "bg-green-100" },
+  task_reopened:                      { icon: "↺",  color: "text-yellow-700",bg: "bg-yellow-100" },
+  escalated:                          { icon: "⬆", color: "text-red-700",   bg: "bg-red-100" },
+  priority_changed:                   { icon: "◈", color: "text-orange-700",bg: "bg-orange-100" },
+  closed:                             { icon: "✕",  color: "text-gray-500",  bg: "bg-gray-200" },
+  corrective_action_added:            { icon: "⚑",  color: "text-violet-700",bg: "bg-violet-100" },
+  corrective_action_completed:        { icon: "⚑",  color: "text-green-700", bg: "bg-green-100" },
+  corrective_action_needs_verification:{ icon: "⚑", color: "text-amber-700", bg: "bg-amber-100" },
+  witness_statement_added:            { icon: "👁",  color: "text-teal-700",  bg: "bg-teal-100" },
+  ai_analysis_generated:              { icon: "✦",  color: "text-indigo-700",bg: "bg-indigo-100" },
+  osha_review_started:                { icon: "⚠",  color: "text-amber-700", bg: "bg-amber-100" },
+  osha_decision_logged:               { icon: "⚠",  color: "text-amber-800", bg: "bg-amber-200" },
+  safety_review_initiated:            { icon: "🛡",  color: "text-blue-700",  bg: "bg-blue-100" },
+  training_assigned:                  { icon: "📚", color: "text-purple-700",bg: "bg-purple-100" },
+  vet_visit_logged:                   { icon: "🐾", color: "text-teal-700",  bg: "bg-teal-100" },
+  employee_medical_followup:          { icon: "🏥", color: "text-red-700",   bg: "bg-red-100" },
+  case_reopened:                      { icon: "↺",  color: "text-orange-700",bg: "bg-orange-100" },
+  case_resolved:                      { icon: "✓",  color: "text-green-700", bg: "bg-green-100" },
 };
 
-const EVENT_COLORS: Record<string, string> = {
-  case_created:    "bg-indigo-100 text-indigo-700",
-  status_changed:  "bg-blue-100 text-blue-700",
-  assigned:        "bg-cyan-100 text-cyan-700",
-  comment:         "bg-gray-100 text-gray-600",
-  comment_added:   "bg-gray-100 text-gray-600",
-  evidence_upload: "bg-amber-100 text-amber-700",
-  task_completed:  "bg-green-100 text-green-700",
-  task_created:    "bg-green-50 text-green-600",
-  escalated:       "bg-red-100 text-red-700",
-  priority_changed:"bg-orange-100 text-orange-700",
-  closed:          "bg-gray-200 text-gray-500",
-};
+const DEFAULT_META = { icon: "·", color: "text-gray-500", bg: "bg-gray-100" };
 
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -69,33 +70,49 @@ function absTime(iso: string): string {
 function eventLabel(e: OperationalEvent): string {
   const d = e.details;
   switch (e.event_type) {
-    case "case_created":     return `Case created · priority: ${d.priority}`;
-    case "status_changed":   return `Status → ${String(d.new_status).replace(/_/g," ")}`;
-    case "assigned":         return `Assigned to ${d.new_assigned_user ?? "unassigned"}`;
-    case "comment":
-    case "comment_added":    return d.preview ? `"${String(d.preview)}"` : "Comment added";
+    case "case_created":                        return `Case opened · priority: ${d.priority ?? "–"}`;
+    case "status_changed":                      return `Status → ${String(d.new_status ?? "").replace(/_/g, " ")}`;
+    case "assigned":                            return `Assigned to ${d.new_assigned_user ?? "–"}`;
+    case "comment": case "comment_added":       return d.preview ? `"${String(d.preview)}"` : "Comment added";
     case "evidence_upload":
-    case "evidence_uploaded":return `File uploaded: ${d.file_name ?? "unknown"} (${String(d.category).replace(/_/g," ")})`;
-    case "task_created":     return `Task created: "${d.title}"`;
-    case "task_completed":   return `Task completed: "${d.title}"`;
-    case "task_reopened":    return `Task reopened: "${d.title}"`;
-    case "escalated":        return `Escalated to level ${d.new_level}`;
-    case "priority_changed": return `Priority → ${d.new_priority}`;
-    case "closed":           return "Case closed";
-    default:                 return e.event_type.replace(/_/g, " ");
+    case "evidence_uploaded":                   return `Evidence added: ${d.file_name ?? "file"} (${String(d.category ?? "").replace(/_/g, " ")})`;
+    case "task_created":                        return `Task opened: "${d.title}"`;
+    case "task_completed":                      return `Task completed: "${d.title}"`;
+    case "task_reopened":                       return `Task reopened: "${d.title}"`;
+    case "escalated":                           return `Escalated to level ${d.new_level}`;
+    case "priority_changed":                    return `Priority → ${d.new_priority}`;
+    case "closed":                              return "Case closed";
+    case "corrective_action_added":             return `Corrective action added: "${d.title}"`;
+    case "corrective_action_completed":         return `Corrective action completed: "${d.title}"`;
+    case "corrective_action_needs_verification":return `Corrective action needs verification: "${d.title}"`;
+    case "witness_statement_added":             return `Witness statement recorded — ${d.witness_name ?? "witness"} ${d.observed_directly ? "(direct observer)" : "(secondary)"}`;
+    case "ai_analysis_generated":               return "AI analysis generated";
+    case "osha_review_started":                 return "OSHA review initiated";
+    case "osha_decision_logged":                return `OSHA determination: ${d.decision ?? "recorded"}`;
+    case "safety_review_initiated":             return "Safety review initiated";
+    case "training_assigned":                   return `Training assigned: "${d.training_name ?? "–"}"`;
+    case "vet_visit_logged":                    return `Vet visit logged — ${d.animal_name ?? "animal"}`;
+    case "employee_medical_followup":           return "Employee medical follow-up logged";
+    case "case_reopened":                       return "Case reopened";
+    case "case_resolved":                       return "Case resolved";
+    default:                                    return e.event_type.replace(/_/g, " ");
   }
 }
 
-function eventDetail(e: OperationalEvent): string | null {
+function eventSubline(e: OperationalEvent): string | null {
   const d = e.details;
   if (e.event_type === "comment" || e.event_type === "comment_added") {
     const vis = d.visibility as string | undefined;
-    if (vis && vis !== "all") return `Visibility: ${vis.replace(/_/g," ")}`;
+    if (vis && vis !== "all") return `Visibility: ${vis.replace(/_/g, " ")}`;
   }
   if (e.event_type === "evidence_upload" || e.event_type === "evidence_uploaded") {
-    const vis = d.visibility as string | undefined;
-    if (vis && vis !== "all") return `Restricted: ${vis.replace(/_/g," ")}`;
     if (d.ai_processed) return "AI analysis complete";
+    const vis = d.visibility as string | undefined;
+    if (vis && vis !== "all") return `Restricted: ${vis.replace(/_/g, " ")}`;
+  }
+  if (e.event_type === "corrective_action_added") {
+    const rc = d.root_cause as string | undefined;
+    if (rc) return `Root cause: ${rc.replace(/_/g, " ")}`;
   }
   return null;
 }
@@ -103,7 +120,6 @@ function eventDetail(e: OperationalEvent): string | null {
 interface Props {
   caseId: string;
   userMap: Record<string, TenantUser>;
-  // Refresh trigger from parent (e.g. when new WS event arrives)
   refreshTick?: number;
 }
 
@@ -112,13 +128,12 @@ export default function OperationalTimeline({ caseId, userMap, refreshTick }: Pr
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetch = useCallback(async () => {
+  const fetchEvents = useCallback(async () => {
     try {
       const r = await axios.get<OperationalEvent[]>(
         `${API_URL}/cases/${caseId}/operational-timeline`,
         { params: { limit: 200 } }
       );
-      // Newest first for display
       setEvents([...r.data].reverse());
       setError(null);
     } catch (err: unknown) {
@@ -126,44 +141,87 @@ export default function OperationalTimeline({ caseId, userMap, refreshTick }: Pr
     } finally { setLoading(false); }
   }, [caseId]);
 
-  useEffect(() => { fetch(); }, [fetch, refreshTick]);
+  useEffect(() => { fetchEvents(); }, [fetchEvents, refreshTick]);
 
-  if (loading) return <p className="text-xs text-gray-400 text-center py-6">Loading timeline…</p>;
+  if (loading) return (
+    <div className="space-y-3 py-4">
+      {[...Array(4)].map((_, i) => (
+        <div key={i} className="flex gap-3 animate-pulse">
+          <div className="w-7 h-7 rounded-full bg-gray-200 flex-shrink-0" />
+          <div className="flex-1 space-y-1 pt-1">
+            <div className="h-3 bg-gray-200 rounded w-3/4" />
+            <div className="h-2 bg-gray-100 rounded w-1/2" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
   if (error) return <p className="text-xs text-red-600 text-center py-4">{error}</p>;
-  if (events.length === 0) return <p className="text-xs text-gray-400 text-center py-6 italic">No events yet</p>;
+
+  if (events.length === 0) return (
+    <div className="text-center py-10 text-gray-400">
+      <p className="text-2xl mb-2">◎</p>
+      <p className="text-xs">No events recorded yet</p>
+      <p className="text-xs mt-1 text-gray-300">Timeline events appear automatically as the case progresses</p>
+    </div>
+  );
+
+  // Group by date
+  type DateGroup = { label: string; events: OperationalEvent[] };
+  const groups: DateGroup[] = [];
+  for (const e of events) {
+    const dateLabel = new Date(e.created_at).toLocaleDateString(undefined, {
+      weekday: "short", month: "short", day: "numeric",
+    });
+    const last = groups[groups.length - 1];
+    if (last && last.label === dateLabel) {
+      last.events.push(e);
+    } else {
+      groups.push({ label: dateLabel, events: [e] });
+    }
+  }
 
   return (
-    <div className="space-y-0">
-      {events.map((e, idx) => {
-        const icon = EVENT_ICONS[e.event_type] ?? "·";
-        const color = EVENT_COLORS[e.event_type] ?? "bg-gray-100 text-gray-500";
-        const actor = e.actor_id ? userMap[e.actor_id] : null;
-        const detail = eventDetail(e);
-        const isLast = idx === events.length - 1;
-
-        return (
-          <div key={`${e.source}-${e.id}`} className="flex gap-3">
-            {/* Icon + connector */}
-            <div className="flex flex-col items-center flex-shrink-0">
-              <span className={`w-7 h-7 flex items-center justify-center rounded-full text-xs font-bold ${color}`}>
-                {icon}
-              </span>
-              {!isLast && <div className="w-px flex-1 bg-gray-200 my-1" />}
-            </div>
-
-            {/* Content */}
-            <div className="pb-4 pt-0.5 min-w-0 flex-1">
-              <p className="text-xs font-medium text-gray-800">{eventLabel(e)}</p>
-              {detail && (
-                <p className="text-xs text-gray-500 mt-0.5">{detail}</p>
-              )}
-              <p className="text-xs text-gray-400 mt-1" title={absTime(e.created_at)}>
-                {actor?.email ?? "System"} · {relativeTime(e.created_at)}
-              </p>
-            </div>
+    <div className="space-y-6">
+      {groups.map((group) => (
+        <div key={group.label}>
+          {/* Date separator */}
+          <div className="flex items-center gap-3 mb-3">
+            <div className="flex-1 h-px bg-gray-100" />
+            <span className="text-xs text-gray-400 font-medium px-2">{group.label}</span>
+            <div className="flex-1 h-px bg-gray-100" />
           </div>
-        );
-      })}
+
+          <div className="space-y-0">
+            {group.events.map((e, idx) => {
+              const meta = EVENT_META[e.event_type] ?? DEFAULT_META;
+              const actor = e.actor_id ? userMap[e.actor_id] : null;
+              const subline = eventSubline(e);
+              const isLast = idx === group.events.length - 1;
+
+              return (
+                <div key={`${e.source}-${e.id}`} className="flex gap-3">
+                  <div className="flex flex-col items-center flex-shrink-0">
+                    <span className={`w-7 h-7 flex items-center justify-center rounded-full text-xs font-bold flex-shrink-0 ${meta.bg} ${meta.color}`}>
+                      {meta.icon}
+                    </span>
+                    {!isLast && <div className="w-px flex-1 bg-gray-150 my-1" style={{ backgroundColor: "#e5e7eb" }} />}
+                  </div>
+
+                  <div className="pb-4 pt-0.5 min-w-0 flex-1">
+                    <p className="text-xs font-medium text-gray-800 leading-snug">{eventLabel(e)}</p>
+                    {subline && <p className="text-xs text-gray-500 mt-0.5">{subline}</p>}
+                    <p className="text-xs text-gray-400 mt-1" title={absTime(e.created_at)}>
+                      {actor ? actor.email.split("@")[0] : "System"} · {relativeTime(e.created_at)}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

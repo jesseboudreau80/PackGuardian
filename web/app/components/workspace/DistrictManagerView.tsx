@@ -13,7 +13,7 @@ interface CommandSummary {
   total_incidents: number; open_incidents: number; critical_incidents: number;
   average_risk_score: number; escalated_case_count: number;
   open_cases_by_status: Record<string, number>;
-  escalated_cases: { id: string; incident_id: string; priority: string; escalation_level: number; updated_at: string }[];
+  escalated_cases: { id: string; incident_id: string; priority: string; escalation_level: number; status: string; updated_at: string }[];
 }
 
 interface CenterHeat {
@@ -28,9 +28,20 @@ function relTime(iso: string) {
   return `${Math.floor(m / 60)}h ago`;
 }
 
-const RISK_STYLES: Record<string, string> = {
-  high: "bg-red-100 text-red-700", medium: "bg-orange-100 text-orange-700", low: "bg-green-100 text-green-700",
+const RISK_ACCENT: Record<string, string> = {
+  high: "#b91c1c", medium: "#c2410c", low: "#15803d",
 };
+
+const ESC_LABEL: Record<number, string> = { 1: "SUP", 2: "SD", 3: "EXEC" };
+
+function MetricCard({ label, value, accent }: { label: string; value: string | number; accent?: string }) {
+  return (
+    <div className="rounded-xl px-5 pt-4 pb-3.5 bg-white" style={{ border: "1px solid var(--pg-border)", boxShadow: "var(--shadow-card)" }}>
+      <p className="text-xs font-medium uppercase tracking-widest" style={{ color: "var(--pg-text-muted)", letterSpacing: "0.05em" }}>{label}</p>
+      <p className="text-2xl font-bold tabular-nums mt-1.5 leading-none" style={{ color: accent ?? "var(--pg-navy)" }}>{value}</p>
+    </div>
+  );
+}
 
 export default function DistrictManagerView() {
   const { token } = useAuth();
@@ -63,95 +74,107 @@ export default function DistrictManagerView() {
       <QuickActions />
 
       {loading ? (
-        <div className="text-center py-12 text-sm text-gray-400">Loading district data…</div>
+        <div className="flex flex-col gap-5 animate-pulse">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {Array.from({ length: 4 }).map((_, i) => <div key={i} className="pg-skeleton h-20 rounded-xl" />)}
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {Array.from({ length: 2 }).map((_, i) => <div key={i} className="pg-skeleton h-56 rounded-xl" />)}
+          </div>
+        </div>
       ) : (
         <>
-          {/* Metrics */}
           {summary && (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <div className="bg-white rounded-xl border border-gray-200 px-5 py-4">
-                <p className="text-xs text-gray-500 font-medium">Open {t("incident","Incidents")}</p>
-                <p className={`text-2xl font-bold mt-1 ${summary.open_incidents > 5 ? "text-orange-600" : "text-gray-900"}`}>
-                  {summary.open_incidents}
-                </p>
-              </div>
-              <div className="bg-white rounded-xl border border-gray-200 px-5 py-4">
-                <p className="text-xs text-gray-500 font-medium">Critical</p>
-                <p className={`text-2xl font-bold mt-1 ${summary.critical_incidents > 0 ? "text-red-600" : "text-gray-900"}`}>
-                  {summary.critical_incidents}
-                </p>
-              </div>
-              <div className="bg-white rounded-xl border border-gray-200 px-5 py-4">
-                <p className="text-xs text-gray-500 font-medium">Active Escalations</p>
-                <p className={`text-2xl font-bold mt-1 ${summary.escalated_case_count > 0 ? "text-orange-600" : "text-green-600"}`}>
-                  {summary.escalated_case_count}
-                </p>
-              </div>
-              <div className="bg-white rounded-xl border border-gray-200 px-5 py-4">
-                <p className="text-xs text-gray-500 font-medium">Avg Risk Score</p>
-                <p className={`text-2xl font-bold mt-1 ${summary.average_risk_score >= 70 ? "text-red-600" : "text-gray-900"}`}>
-                  {summary.average_risk_score}/100
-                </p>
-              </div>
+              <MetricCard label={`Open ${t("incident","Incidents")}`} value={summary.open_incidents}
+                accent={summary.open_incidents > 5 ? "#c2410c" : undefined} />
+              <MetricCard label="Critical" value={summary.critical_incidents}
+                accent={summary.critical_incidents > 0 ? "#b91c1c" : undefined} />
+              <MetricCard label="Escalations" value={summary.escalated_case_count}
+                accent={summary.escalated_case_count > 0 ? "#c2410c" : undefined} />
+              <MetricCard label="Avg Risk Score" value={`${summary.average_risk_score}/100`}
+                accent={summary.average_risk_score >= 70 ? "#b91c1c" : summary.average_risk_score >= 40 ? "#c2410c" : undefined} />
             </div>
           )}
 
-          {/* Center comparison + escalations */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Center heat comparison */}
-            <div className="bg-white rounded-xl border border-gray-200">
-              <div className="px-5 py-3 border-b border-gray-100 bg-indigo-50 flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-indigo-800">{t("center","Center")} Risk Comparison</h2>
-                <Link href="/map" className="text-xs text-indigo-600 hover:underline">Full Map →</Link>
+            {/* Center risk comparison */}
+            <div className="rounded-xl overflow-hidden bg-white" style={{ border: "1px solid var(--pg-border)", boxShadow: "var(--shadow-card)" }}>
+              <div className="px-5 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid var(--pg-border-soft)" }}>
+                <h2 className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--pg-text-muted)", letterSpacing: "0.06em" }}>
+                  {t("center","Center")} Risk Comparison
+                </h2>
+                <Link href="/map" className="text-xs font-medium hover:underline" style={{ color: "var(--pg-steel)" }}>
+                  Full Map →
+                </Link>
               </div>
-              <div className="divide-y divide-gray-100">
+              <div className="divide-y" style={{ divideColor: "var(--pg-border-soft)" }}>
                 {centers.length === 0 ? (
-                  <div className="px-5 py-4 text-xs text-gray-400">
-                    <p className="italic mb-2">No center data yet.</p>
-                    <Link href="/map" className="text-indigo-600 hover:underline">Register centers on the Risk Map →</Link>
+                  <div className="px-5 py-5 text-center">
+                    <p className="text-xs italic mb-2" style={{ color: "var(--pg-text-muted)" }}>No center data yet.</p>
+                    <Link href="/map" className="text-xs font-medium hover:underline" style={{ color: "var(--pg-steel)" }}>
+                      Register centers on the Risk Map →
+                    </Link>
                   </div>
                 ) : centers.slice(0, 8).map((c) => (
-                  <div key={c.center_id} className="flex items-center gap-3 px-5 py-2.5">
+                  <Link key={c.center_id} href="/map"
+                    className="flex items-center gap-3 px-5 py-2.5 transition-colors"
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--pg-surface)"; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                  >
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-800">{c.name}</p>
-                      <p className="text-xs text-gray-400">{c.incident_count} incidents</p>
+                      <p className="text-sm font-medium truncate" style={{ color: "var(--pg-text)" }}>{c.name}</p>
+                      <p className="text-xs mt-0.5" style={{ color: "var(--pg-text-muted)" }}>{c.incident_count} incidents</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <div className="w-20 bg-gray-200 rounded-full h-1.5">
-                        <div className="h-1.5 rounded-full bg-indigo-500 transition-all"
-                          style={{ width: `${Math.min(100, c.heat_score)}%` }} />
+                      <div className="w-20 rounded-full h-1.5" style={{ background: "var(--pg-border)" }}>
+                        <div className="h-1.5 rounded-full transition-all"
+                          style={{ width: `${Math.min(100, c.heat_score)}%`, background: "var(--pg-slate)" }} />
                       </div>
-                      <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${RISK_STYLES[c.emerging_risk_level] ?? ""}`}>
+                      <span className="text-xs font-semibold w-12 text-right" style={{ color: RISK_ACCENT[c.emerging_risk_level] ?? "var(--pg-text-muted)" }}>
                         {c.emerging_risk_level}
                       </span>
                     </div>
-                  </div>
+                  </Link>
                 ))}
               </div>
             </div>
 
-            {/* Escalations */}
-            <div className="bg-white rounded-xl border border-gray-200">
-              <div className="px-5 py-3 border-b border-gray-100 bg-orange-50 flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-orange-800">Escalation Tracker</h2>
-                <Link href="/cases" className="text-xs text-orange-600 hover:underline">All Cases →</Link>
+            {/* Escalation tracker */}
+            <div className="rounded-xl overflow-hidden bg-white" style={{ border: "1px solid var(--pg-border)", boxShadow: "var(--shadow-card)" }}>
+              <div className="px-5 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid var(--pg-border-soft)" }}>
+                <h2 className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--pg-text-muted)", letterSpacing: "0.06em" }}>
+                  Escalation Tracker
+                </h2>
+                <Link href="/cases" className="text-xs font-medium hover:underline" style={{ color: "var(--pg-steel)" }}>
+                  All Cases →
+                </Link>
               </div>
-              <div className="divide-y divide-gray-100">
+              <div className="divide-y" style={{ divideColor: "var(--pg-border-soft)" }}>
                 {summary?.escalated_cases && summary.escalated_cases.length > 0 ? (
-                  summary.escalated_cases.map((c) => (
+                  summary.escalated_cases.slice(0, 8).map((c) => (
                     <Link key={c.id} href="/cases"
-                      className="flex items-center gap-3 px-5 py-2.5 hover:bg-gray-50">
-                      <span className={`text-sm font-bold flex-shrink-0 ${
-                        c.escalation_level >= 3 ? "text-red-600" : "text-orange-600"
-                      }`}>
-                        L{c.escalation_level}
+                      className="flex items-center gap-2.5 px-5 py-2.5 transition-colors"
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--pg-surface)"; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                    >
+                      <span className="text-xs font-bold px-1.5 py-0.5 rounded flex-shrink-0"
+                        style={{
+                          background: c.escalation_level >= 3 ? "rgba(185,28,28,0.1)" : "rgba(194,65,12,0.1)",
+                          color: c.escalation_level >= 3 ? "#b91c1c" : "#c2410c",
+                        }}>
+                        {ESC_LABEL[c.escalation_level] ?? `L${c.escalation_level}`}
                       </span>
-                      <span className="text-sm text-gray-700 capitalize flex-1">{c.priority}</span>
-                      <span className="text-xs text-gray-400">{relTime(c.updated_at)}</span>
+                      <span className="text-xs capitalize flex-1 truncate" style={{ color: "var(--pg-text-sub)" }}>
+                        {c.priority} · {c.status.replace(/_/g," ")}
+                      </span>
+                      <span className="text-xs flex-shrink-0" style={{ color: "var(--pg-text-muted)" }}>{relTime(c.updated_at)}</span>
                     </Link>
                   ))
                 ) : (
-                  <p className="px-5 py-4 text-xs text-green-600">✓ No active escalations</p>
+                  <div className="px-5 py-6 text-center">
+                    <p className="text-xs font-medium" style={{ color: "#15803d" }}>✓ No active escalations</p>
+                  </div>
                 )}
               </div>
             </div>

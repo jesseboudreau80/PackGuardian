@@ -86,9 +86,9 @@ export default function JoinPage() {
         </div>
 
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
-          <h2 className="text-base font-semibold text-gray-900 mb-1">You're invited!</h2>
+          <h2 className="text-base font-semibold text-gray-900 mb-1">You&apos;re invited!</h2>
           <p className="text-sm text-gray-500 mb-4">
-            You've been invited to join <strong>{info?.tenant_name}</strong> as{" "}
+            You&apos;ve been invited to join <strong>{info?.tenant_name}</strong> as{" "}
             <strong className="capitalize">{info?.role?.replace(/_/g, " ")}</strong>.
             Set your password to accept.
           </p>

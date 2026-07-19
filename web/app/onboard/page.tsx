@@ -397,7 +397,7 @@ export default function OnboardPage() {
             <div className="space-y-5">
               <h2 className="text-xl font-semibold text-gray-900">Invite your team</h2>
               <p className="text-sm text-gray-500">
-                Add team members. They'll receive a link to create their account. You can do this later too.
+                Add team members. They&apos;ll receive a link to create their account. You can do this later too.
               </p>
 
               <div className="space-y-2">

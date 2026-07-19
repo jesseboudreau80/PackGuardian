@@ -105,6 +105,12 @@ def create_incident(
     db.flush()  # assign id before audit + log entries reference it
     write_audit_entries(db, incident.id, initial_audit_entries(incident))
     _create_osha_log(db, incident, tenant_id)
+    # Compute operational risk score after flush so case/CA queries can run
+    try:
+        from app.modules.signals.risk_scoring import apply_risk_score
+        apply_risk_score(db, incident.id, tenant_id)
+    except Exception:
+        pass
     db.commit()
     db.refresh(incident)
     return IncidentRead.model_validate(incident)
@@ -157,6 +163,11 @@ def update_incident_osha(
 
     write_audit_entries(db, incident.id, changes, changed_by=data.changed_by)
 
+    try:
+        from app.modules.signals.risk_scoring import apply_risk_score
+        apply_risk_score(db, incident.id, tenant_id)
+    except Exception:
+        pass
     db.commit()
     db.refresh(incident)
     return IncidentRead.model_validate(incident)

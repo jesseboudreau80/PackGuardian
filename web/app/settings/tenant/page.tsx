@@ -24,7 +24,7 @@ interface InviteRead {
 
 const INPUT = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white";
 
-type ActiveSection = "branding" | "safety" | "invites";
+type ActiveSection = "branding" | "safety" | "invites" | "demo";
 
 export default function TenantSettingsPage() {
   const { isAuthenticated, isAdmin } = useAuth();
@@ -48,6 +48,12 @@ export default function TenantSettingsPage() {
   });
   const [safetySaving, setSafetySaving] = useState(false);
   const [safetySaved, setSafetySaved] = useState(false);
+
+  // Demo data
+  const [demoResetting, setDemoResetting] = useState(false);
+  const [demoResult, setDemoResult] = useState<Record<string, number> | null>(null);
+  const [demoError, setDemoError] = useState<string | null>(null);
+  const [demoConfirm, setDemoConfirm] = useState(false);
 
   // Invites
   const [invites, setInvites] = useState<InviteRead[]>([]);
@@ -124,6 +130,19 @@ export default function TenantSettingsPage() {
     finally { setRevoking(null); }
   }
 
+  async function resetDemo() {
+    setDemoResetting(true); setDemoResult(null); setDemoError(null); setDemoConfirm(false);
+    try {
+      const res = await axios.post<Record<string, number>>(`${API_URL}/provision/reset-demo`);
+      setDemoResult(res.data);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setDemoError(msg ?? "Reset failed. Check server logs.");
+    } finally {
+      setDemoResetting(false);
+    }
+  }
+
   function copyLink(invite: InviteRead) {
     navigator.clipboard.writeText(invite.invite_url);
     setCopiedId(invite.id);
@@ -136,6 +155,7 @@ export default function TenantSettingsPage() {
     { key: "branding", label: "Branding" },
     { key: "safety",   label: "Safety Defaults" },
     { key: "invites",  label: "Invitations" },
+    { key: "demo",     label: "Demo Data" },
   ];
 
   return (
@@ -252,21 +272,13 @@ export default function TenantSettingsPage() {
           </div>
           <div>
             <h3 className="text-sm font-semibold text-gray-700 mb-3">Operational Defaults</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Inspection Cadence (days)</label>
-                <input type="number" min={1} max={365}
-                  value={safetyForm.default_inspection_cadence_days}
-                  onChange={(e) => setSafetyForm((f) => ({ ...f, default_inspection_cadence_days: Number(e.target.value) }))}
-                  className={INPUT} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Escalation Threshold (hours)</label>
-                <input type="number" min={1} max={168}
-                  value={safetyForm.default_escalation_hours}
-                  onChange={(e) => setSafetyForm((f) => ({ ...f, default_escalation_hours: Number(e.target.value) }))}
-                  className={INPUT} />
-              </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Escalation Threshold (hours)</label>
+              <input type="number" min={1} max={168}
+                value={safetyForm.default_escalation_hours}
+                onChange={(e) => setSafetyForm((f) => ({ ...f, default_escalation_hours: Number(e.target.value) }))}
+                className={INPUT} />
+              <p className="text-xs text-gray-400 mt-1">Hours before an unacknowledged case auto-escalates to the next level</p>
             </div>
           </div>
           <button type="submit" disabled={safetySaving}
@@ -275,6 +287,112 @@ export default function TenantSettingsPage() {
             {safetySaved ? "✓ Saved" : safetySaving ? "Saving…" : "Save Safety Settings"}
           </button>
         </form>
+      )}
+
+      {/* ── Demo Data ── */}
+      {section === "demo" && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <h3 className="text-sm font-semibold text-gray-800 mb-1">Happy Tails Pet Resorts Demo</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              Populates your workspace with a realistic 20-center enterprise scenario — incidents,
+              OSHA data, cases, incidents, evidence, and more. Existing data for this tenant
+              will be replaced.
+            </p>
+
+            <div className="bg-gray-50 rounded-lg border border-gray-200 p-4 mb-4 grid grid-cols-2 gap-y-1 text-sm text-gray-600">
+              <span>Enterprise</span>      <span className="font-medium">Happy Tails Pet Resorts</span>
+              <span>Regions</span>         <span className="font-medium">2 (Southeast, Northeast)</span>
+              <span>Districts</span>       <span className="font-medium">5</span>
+              <span>Centers</span>         <span className="font-medium">20 across FL, GA, NY, PA, MA/CT/RI/NH</span>
+              <span>Demo users</span>      <span className="font-medium">15 (safety, HR, area/district/center managers)</span>
+              <span>Incidents</span>       <span className="font-medium">31 (8 OSHA recordable)</span>
+              <span>Cases</span>           <span className="font-medium">31 (with tasks, comments, escalations)</span>
+              <span>OSHA Records</span>     <span className="font-medium">Recordable incidents with classification</span>
+              <span>Evidence files</span>  <span className="font-medium">12 (with AI analysis)</span>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-700 mb-5">
+              <strong>Warning:</strong> This will delete all existing users, incidents, cases, inspections,
+              and operational data for this workspace. Your admin account is preserved.
+            </div>
+
+            {demoResult && (
+              <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm text-green-700 mb-4">
+                <p className="font-semibold mb-1">Demo data loaded successfully.</p>
+                <div className="grid grid-cols-3 gap-x-6 gap-y-0.5 text-xs mt-2">
+                  {Object.entries(demoResult)
+                    .filter(([k]) => k !== "reset")
+                    .map(([k, v]) => (
+                      <span key={k}>{k.replace(/_/g, " ")}: <strong>{v}</strong></span>
+                    ))}
+                </div>
+                <p className="text-xs mt-2 text-green-600">
+                  Log in as <code className="bg-green-100 px-1 rounded">sarah.chen@happytails.com</code> /&nbsp;
+                  <code className="bg-green-100 px-1 rounded">HappyTails2024!</code> to explore as Safety Director.
+                </p>
+              </div>
+            )}
+
+            {demoError && (
+              <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 mb-4">
+                {demoError}
+              </div>
+            )}
+
+            {!demoConfirm ? (
+              <button
+                onClick={() => setDemoConfirm(true)}
+                className="px-5 py-2.5 text-sm font-medium bg-amber-500 hover:bg-amber-600 text-white rounded-lg transition-colors"
+              >
+                Reset &amp; Load Demo Data
+              </button>
+            ) : (
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={resetDemo}
+                  disabled={demoResetting}
+                  className="px-5 py-2.5 text-sm font-medium bg-red-600 hover:bg-red-700 text-white rounded-lg disabled:opacity-50 transition-colors"
+                >
+                  {demoResetting ? "Resetting…" : "Confirm Reset"}
+                </button>
+                <button
+                  onClick={() => setDemoConfirm(false)}
+                  className="px-4 py-2.5 text-sm text-gray-600 hover:text-gray-800"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <h3 className="text-sm font-semibold text-gray-700 mb-2">Demo User Logins</h3>
+            <p className="text-xs text-gray-400 mb-3">All demo users share the same password.</p>
+            <div className="space-y-1 text-sm">
+              {[
+                ["Sarah Chen", "sarah.chen@happytails.com",       "Safety Director"],
+                ["Michael Rodriguez", "michael.rodriguez@happytails.com", "HR Manager"],
+                ["Jennifer Kim", "jennifer.kim@happytails.com",   "Area VP — Southeast"],
+                ["David Patel", "david.patel@happytails.com",    "Area VP — Northeast"],
+                ["Marcus Johnson", "marcus.johnson@happytails.com","District Director — Florida"],
+                ["Patricia Hall", "patricia.hall@happytails.com", "Center Manager — Miami / Orlando"],
+              ].map(([name, email, role]) => (
+                <div key={email} className="flex items-center justify-between py-1.5 border-b border-gray-50 last:border-0">
+                  <div>
+                    <span className="font-medium text-gray-800">{name}</span>
+                    <span className="text-gray-400 mx-1.5">&middot;</span>
+                    <span className="text-gray-500 text-xs">{role}</span>
+                  </div>
+                  <code className="text-xs text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">{email}</code>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-gray-400 mt-3">
+              Password for all demo users: <code className="bg-gray-100 px-1.5 py-0.5 rounded text-gray-600">HappyTails2024!</code>
+            </p>
+          </div>
+        </div>
       )}
 
       {/* ── Invitations ── */}

@@ -460,3 +460,332 @@ def universal_search(
     except Exception as exc:
         logger.exception("[packguardian][hub] Search failed tenant=%s", current_user.tenant_id)
         raise HTTPException(status_code=500, detail="Search failed") from exc
+
+
+# ── Center Health Scoring ─────────────────────────────────────────────────────
+
+def _center_health_score(
+    *,
+    incidents_30d: list,
+    incidents_15d_recent: int,
+    incidents_15d_prior: int,
+    open_ca: int,
+    overdue_ca: int,
+    escalated_cases: int,
+    last_inspection_score: int | None,
+) -> tuple[int, str, str]:
+    """
+    Returns (health_score 0-100, tier, trend).
+    100 = excellent operational health. 0 = critical concern.
+    Tier: good | fair | needs_attention | critical
+    Trend: improving | stable | declining
+    """
+    score = 100
+
+    # Incident volume penalty
+    for inc in incidents_30d:
+        sev = getattr(inc, "adjusted_severity", None) or getattr(inc, "reported_severity", "medium")
+        score -= {"critical": 20, "high": 12, "medium": 6, "low": 2}.get(str(sev), 6)
+
+    # Corrective action burden
+    score -= open_ca * 4
+    score -= overdue_ca * 8
+
+    # Escalation penalty
+    score -= escalated_cases * 12
+
+    # Inspection bonus/penalty
+    if last_inspection_score is not None:
+        if last_inspection_score >= 90:
+            score += 5
+        elif last_inspection_score < 60:
+            score -= 10
+
+    score = max(0, min(100, score))
+
+    # Tier
+    if score >= 80:
+        tier = "good"
+    elif score >= 60:
+        tier = "fair"
+    elif score >= 40:
+        tier = "needs_attention"
+    else:
+        tier = "critical"
+
+    # Trend: compare last 15d vs prior 15d
+    if incidents_15d_recent > incidents_15d_prior + 1:
+        trend = "declining"
+    elif incidents_15d_prior > incidents_15d_recent + 1:
+        trend = "improving"
+    else:
+        trend = "stable"
+
+    return score, tier, trend
+
+
+@router_command.get("/center-health", response_model=list[dict])
+def get_center_health(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    limit: int = 20,
+) -> list[dict]:
+    """
+    Per-center operational health scores for multi-location visibility.
+    Returns centers sorted by health score ascending (most at-risk first).
+    """
+    from datetime import timedelta
+    from app.modules.corrective_actions.models import CorrectiveAction
+    from app.modules.inspections.models import Inspection
+
+    tid = current_user.tenant_id
+    now = datetime.now(timezone.utc)
+    cutoff_30 = now - timedelta(days=30)
+    cutoff_15 = now - timedelta(days=15)
+
+    centers = db.query(Center).filter(Center.tenant_id == tid).limit(limit).all()
+    results = []
+
+    for center in centers:
+        cc = center.center_code
+
+        # Incidents in 30d
+        inc_30d = db.query(Incident).filter(
+            Incident.tenant_id == tid,
+            Incident.center_id == cc,
+            Incident.created_at >= cutoff_30,
+        ).all()
+
+        inc_15d_recent = sum(1 for i in inc_30d if i.created_at >= cutoff_15)
+        inc_15d_prior = len(inc_30d) - inc_15d_recent
+
+        # Avg operational risk score
+        scored = [i.operational_risk_score for i in inc_30d if i.operational_risk_score is not None]
+        avg_risk = round(sum(scored) / len(scored)) if scored else None
+
+        # Corrective actions via cases linked to center incidents
+        center_inc_ids = [i.id for i in inc_30d]
+        open_ca = 0
+        overdue_ca = 0
+        if center_inc_ids:
+            cases_q = db.query(IncidentCase).filter(
+                IncidentCase.incident_id.in_(center_inc_ids),
+                IncidentCase.tenant_id == tid,
+            ).all()
+            case_ids = [c.id for c in cases_q]
+            if case_ids:
+                all_cas = db.query(CorrectiveAction).filter(
+                    CorrectiveAction.case_id.in_(case_ids),
+                    CorrectiveAction.status.notin_(["completed"]),
+                ).all()
+                open_ca = len(all_cas)
+                overdue_ca = sum(1 for ca in all_cas if ca.due_date and ca.due_date.replace(
+                    tzinfo=timezone.utc if ca.due_date.tzinfo is None else ca.due_date.tzinfo) < now)
+
+        # Escalated cases
+        esc_cases = 0
+        if center_inc_ids:
+            cases_q = db.query(IncidentCase).filter(
+                IncidentCase.incident_id.in_(center_inc_ids),
+                IncidentCase.escalation_level >= 1,
+                IncidentCase.status.notin_(["resolved", "closed"]),
+            ).count()
+            esc_cases = cases_q
+
+        # Last inspection score
+        last_insp = db.query(Inspection).filter(
+            Inspection.center_code == cc,
+            Inspection.tenant_id == tid,
+        ).order_by(Inspection.created_at.desc()).first()
+        last_insp_score = last_insp.score if last_insp else None
+        last_insp_date = last_insp.created_at.isoformat() if last_insp else None
+
+        health, tier, trend = _center_health_score(
+            incidents_30d=inc_30d,
+            incidents_15d_recent=inc_15d_recent,
+            incidents_15d_prior=inc_15d_prior,
+            open_ca=open_ca,
+            overdue_ca=overdue_ca,
+            escalated_cases=esc_cases,
+            last_inspection_score=last_insp_score,
+        )
+
+        results.append({
+            "center_code": cc,
+            "center_name": center.name,
+            "city": center.city,
+            "state": center.state,
+            "health_score": health,
+            "tier": tier,
+            "trend": trend,
+            "incident_count_30d": len(inc_30d),
+            "open_corrective_actions": open_ca,
+            "overdue_corrective_actions": overdue_ca,
+            "escalated_cases": esc_cases,
+            "avg_risk_score": avg_risk,
+            "last_inspection_score": last_insp_score,
+            "last_inspection_date": last_insp_date,
+        })
+
+    # Sort by health score ascending (most at-risk first)
+    results.sort(key=lambda x: x["health_score"])
+    return results
+
+
+@router_command.get("/executive-briefing", response_model=dict)
+def get_executive_briefing(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    scope: OrgScope = Depends(get_org_scope),
+) -> dict:
+    """
+    Executive-level portfolio summary: risk by center, OSHA exposure, unresolved risks.
+    """
+    from datetime import timedelta
+    from app.modules.corrective_actions.models import CorrectiveAction
+
+    tid = current_user.tenant_id
+    now = datetime.now(timezone.utc)
+    cutoff_30 = now - timedelta(days=30)
+    cutoff_7 = now - timedelta(days=7)
+
+    all_incidents = apply_scope(db.query(Incident), scope, tid).all()
+    recent_30 = [i for i in all_incidents if i.created_at >= cutoff_30]
+    recent_7 = [i for i in all_incidents if i.created_at >= cutoff_7]
+
+    # Prior week for trend
+    cutoff_14 = now - timedelta(days=14)
+    prior_7 = [i for i in all_incidents if cutoff_14 <= i.created_at < cutoff_7]
+
+    # Risk band distribution
+    bands = {"critical": 0, "high": 0, "elevated": 0, "moderate": 0, "low": 0, "unscored": 0}
+    for i in recent_30:
+        band = getattr(i, "risk_band", None) or "unscored"
+        bands[band] = bands.get(band, 0) + 1
+
+    # OSHA exposure
+    recordable = [i for i in all_incidents if i.recordable]
+    osha_pending = [i for i in all_incidents if i.recordable and not i.is_finalized]
+
+    # Unresolved high-risk cases
+    all_cases = _case_scope(
+        db.query(IncidentCase).filter(
+            IncidentCase.status.notin_(["resolved", "closed"])
+        ), scope, tid
+    ).all()
+    escalated = [c for c in all_cases if c.escalation_level >= 1]
+
+    # Top unresolved corrective actions (overdue)
+    overdue_cas = db.query(CorrectiveAction).filter(
+        CorrectiveAction.tenant_id == tid,
+        CorrectiveAction.status.notin_(["completed"]),
+        CorrectiveAction.due_date < now,
+        CorrectiveAction.due_date.isnot(None),
+    ).count()
+
+    # Top incident types this month
+    type_counts: Counter = Counter(i.incident_type for i in recent_30)
+    top_types = [{"type": t.replace("_", " ").title(), "count": c}
+                 for t, c in type_counts.most_common(5)]
+
+    # Week-over-week trend
+    incident_trend = "up" if len(recent_7) > len(prior_7) else "down" if len(recent_7) < len(prior_7) else "flat"
+
+    # Centers with most incidents
+    from collections import defaultdict
+    by_center: dict = defaultdict(int)
+    for i in recent_30:
+        by_center[i.center_id] += 1
+    top_centers = [{"center_id": k, "count": v} for k, v in sorted(by_center.items(), key=lambda x: -x[1])[:5]]
+
+    return {
+        "generated_at": now.isoformat(),
+        "period_days": 30,
+        "total_incidents_30d": len(recent_30),
+        "total_incidents_7d": len(recent_7),
+        "incident_trend_wow": incident_trend,
+        "prior_week_count": len(prior_7),
+        "risk_band_distribution": bands,
+        "osha_recordable_total": len(recordable),
+        "osha_pending_finalization": len(osha_pending),
+        "open_cases": len(all_cases),
+        "escalated_cases": len(escalated),
+        "overdue_corrective_actions": overdue_cas,
+        "top_incident_types": top_types,
+        "top_centers_by_volume": top_centers,
+    }
+
+
+@router_command.get("/command/pilot-metrics")
+def get_pilot_metrics(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Lightweight pilot health metrics for founder/admin visibility."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    from datetime import timedelta
+    from app.modules.corrective_actions.models import CorrectiveAction
+    from app.modules.signals.models import SafetySignal
+
+    tid = current_user.tenant_id
+    now = datetime.now(timezone.utc)
+    cutoff_30 = now - timedelta(days=30)
+    cutoff_7  = now - timedelta(days=7)
+
+    all_incidents = db.query(Incident).filter(Incident.tenant_id == tid).all()
+    recent_30 = [i for i in all_incidents if i.created_at >= cutoff_30]
+    recent_7  = [i for i in all_incidents if i.created_at >= cutoff_7]
+
+    # Report completeness — incidents with very short descriptions (proxy for rushed/mobile reports)
+    sparse = [i for i in recent_30 if not i.description or len((i.description or "").strip()) < 50]
+    sparse_pct = round(len(sparse) / max(len(recent_30), 1) * 100)
+
+    # Missing employee name on employee-type incidents
+    employee_types = {"employee_injury", "slip_fall", "chemical", "dog_bite", "grooming"}
+    emp_incidents = [i for i in recent_30 if i.incident_type in employee_types]
+    missing_name  = [i for i in emp_incidents if not i.employee_name]
+    missing_name_pct = round(len(missing_name) / max(len(emp_incidents), 1) * 100)
+
+    # CA health
+    all_cas = db.query(CorrectiveAction).filter(CorrectiveAction.tenant_id == tid).all()
+    total_cas = len(all_cas)
+    completed_cas = len([c for c in all_cas if c.status == "completed"])
+    overdue_cas   = len([c for c in all_cas if c.status != "completed"
+                         and c.due_date and c.due_date < now])
+    ca_completion_pct = round(completed_cas / max(total_cas, 1) * 100)
+
+    # Open unassigned cases
+    open_cases = db.query(IncidentCase).filter(
+        IncidentCase.tenant_id == tid,
+        IncidentCase.status.notin_(["resolved", "closed"]),
+    ).all()
+    unassigned = [c for c in open_cases if not c.assigned_to_user_id]
+
+    # Active signals
+    active_signals = db.query(SafetySignal).filter(
+        SafetySignal.tenant_id == tid,
+        SafetySignal.is_active == True,
+        SafetySignal.is_dismissed == False,
+    ).count()
+
+    # Centers active in last 7 days
+    active_centers = len({i.center_id for i in recent_7})
+
+    return {
+        "generated_at": now.isoformat(),
+        "incidents_30d": len(recent_30),
+        "incidents_7d": len(recent_7),
+        "incidents_total": len(all_incidents),
+        "sparse_report_pct": sparse_pct,
+        "missing_employee_name_pct": missing_name_pct,
+        "ca_total": total_cas,
+        "ca_completed": completed_cas,
+        "ca_completion_pct": ca_completion_pct,
+        "ca_overdue": overdue_cas,
+        "open_cases": len(open_cases),
+        "unassigned_cases": len(unassigned),
+        "active_signals": active_signals,
+        "active_centers_7d": active_centers,
+    }

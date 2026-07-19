@@ -47,11 +47,30 @@ def post_incident(
         except Exception:
             logger.warning("Failed to auto-create case for incident %s — continuing", result.id)
         db.commit()
+        # Background: refresh safety signals so new patterns are visible immediately
+        try:
+            from app.modules.signals.detector import refresh_signals
+            refresh_signals(db, current_user.tenant_id)
+            db.commit()
+        except Exception:
+            pass  # non-fatal — signals can be refreshed manually
         sev = result.reported_severity.value if hasattr(result.reported_severity, "value") else str(result.reported_severity)
         ws.incident_created(current_user.tenant_id,
                             incident_id=result.id, center_id=result.center_id,
                             severity=sev, category=result.category,
                             risk_score=result.risk_score)
+        try:
+            from app.services.slack import pg_slack
+            pg_slack.incident_filed(
+                incident_id=result.id,
+                category=result.category or "unknown",
+                severity=sev,
+                center_id=str(result.center_id) if result.center_id else None,
+                reporter=current_user.email,
+                recordable=result.recordable,
+            )
+        except Exception:
+            pass
         return result
     except Exception as exc:
         logger.exception("Failed to create incident")
@@ -84,11 +103,26 @@ def patch_incident_osha(
     current_user: User = Depends(get_current_user),
 ) -> IncidentRead:
     try:
+        # Capture before-values for audit trail defensibility
+        existing = db.query(Incident).filter(
+            Incident.id == incident_id,
+            Incident.tenant_id == current_user.tenant_id,
+        ).first()
+        changed_fields = [k for k, v in payload.model_dump(exclude={"changed_by"}).items() if v is not None]
+        before_values = {k: getattr(existing, k, None) for k in changed_fields} if existing else {}
+
         result = update_incident_osha(db, incident_id, payload, current_user.tenant_id)
+
+        after_values = {k: getattr(result, k, None) for k in changed_fields}
         audit_log(db, tenant_id=current_user.tenant_id, actor_id=current_user.id,
                   action="incident_modified", resource_type="incident",
                   resource_id=incident_id,
-                  details={"op": "osha_update", "fields": [k for k, v in payload.model_dump(exclude={"changed_by"}).items() if v is not None]})
+                  details={
+                      "op": "osha_update",
+                      "fields": changed_fields,
+                      "before": {k: str(v) if v is not None else None for k, v in before_values.items()},
+                      "after":  {k: str(v) if v is not None else None for k, v in after_values.items()},
+                  })
         db.commit()
         return result
     except IncidentFinalizedError as exc:
@@ -121,6 +155,17 @@ def post_finalize(
             dispatch_for_event(db, event)
         except Exception:
             logger.warning("Failed to emit/dispatch INCIDENT_FINALIZED event for %s", incident_id)
+        # Slack — notify #packguardian-lab when OSHA recordable is confirmed
+        try:
+            from app.services.slack import pg_slack
+            if result.recordable:
+                pg_slack.osha_flagged(
+                    incident_id=incident_id,
+                    osha_type=f"Lost time: {result.days_away}d" if result.days_away else "Recordable",
+                    recordable=True,
+                )
+        except Exception:
+            pass
         return result
     except IncidentFinalizedError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

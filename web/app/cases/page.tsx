@@ -14,8 +14,51 @@ import { API_URL } from "../lib/api";
 import EvidenceTab from "../components/EvidenceTab";
 import OperationalTimeline from "../components/OperationalTimeline";
 import AICopilot from "../components/AICopilot";
+import InvestigationBrief from "../components/InvestigationBrief";
+import OshaReadiness from "../components/OshaReadiness";
+import CaseQRCode from "../components/CaseQRCode";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+
+interface CorrectiveAction {
+  id: string;
+  case_id: string;
+  title: string;
+  description: string | null;
+  root_cause: string | null;
+  assigned_to_name: string | null;
+  assigned_to_user_id: string | null;
+  status: string;
+  due_date: string | null;
+  completed_at: string | null;
+  notes: string | null;
+  created_at: string;
+  is_overdue: boolean;
+}
+
+interface WitnessStatement {
+  id: string;
+  case_id: string;
+  witness_name: string;
+  witness_role: string | null;
+  shift_at_time: string | null;
+  observed_directly: boolean;
+  intervention_attempted: boolean;
+  statement: string;
+  ai_summary: string | null;
+  recorded_by_user_id: string;
+  statement_timestamp: string | null;
+  created_at: string;
+}
+
+interface WitnessAISummary {
+  statement_count: number;
+  common_sequence: string;
+  discrepancies: string[];
+  likely_triggers: string[];
+  missing_information: string[];
+  engine: string;
+}
 
 interface Case {
   id: string;
@@ -29,6 +72,8 @@ interface Case {
   due_date: string | null;
   created_at: string;
   updated_at: string;
+  incident_type: string | null;
+  center_id: string | null;
 }
 
 interface IncidentSummary {
@@ -39,9 +84,16 @@ interface IncidentSummary {
   adjusted_severity: string | null;
   category: string | null;
   risk_score: number | null;
+  operational_risk_score: number | null;
+  risk_band: string | null;
   status: string;
   recordable: boolean | null;
   created_at: string;
+  description: string | null;
+  explanation: string | null;
+  employee_name: string | null;
+  body_part: string | null;
+  treatment_type: string | null;
 }
 
 interface Task {
@@ -260,7 +312,7 @@ export default function CasesPage() {
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Case Management</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Enterprise incident lifecycle and workflow tracking</p>
+          <p className="text-sm text-gray-500 mt-0.5">Open investigations, corrective actions, and follow-up tracking</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
@@ -292,9 +344,28 @@ export default function CasesPage() {
         {/* Case list */}
         <div className={`bg-white rounded-xl border border-gray-200 overflow-y-auto ${selectedCaseId ? "w-80 flex-shrink-0" : "flex-1"}`}>
           {loading ? (
-            <div className="text-center py-16 text-sm text-gray-400">Loading cases…</div>
+            <div className="space-y-3 p-4">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="animate-pulse bg-gray-100 rounded-xl h-16" />
+              ))}
+            </div>
           ) : cases.length === 0 ? (
-            <div className="text-center py-16 text-sm text-gray-400">No cases found.</div>
+            <div className="px-6 py-12 text-center space-y-4">
+              <div className="text-4xl">📋</div>
+              <div>
+                <p className="text-sm font-semibold text-gray-700">No cases yet</p>
+                <p className="text-xs text-gray-400 mt-1 leading-relaxed max-w-xs mx-auto">
+                  Cases are created automatically when incidents are reported. Submit your first incident from the mobile app or Field Ops.
+                </p>
+              </div>
+              <div className="space-y-2 text-xs text-gray-400 text-left bg-gray-50 border border-gray-200 rounded-xl p-4">
+                <p className="font-semibold text-gray-600 mb-2">How cases work:</p>
+                <p>① A field team member reports an incident</p>
+                <p>② PackGuardian creates a case automatically</p>
+                <p>③ You investigate, assign tasks, add corrective actions</p>
+                <p>④ OSHA documentation is tracked through to finalization</p>
+              </div>
+            </div>
           ) : (
             <ul className="divide-y divide-gray-100">
               {cases.map((c) => (
@@ -348,15 +419,18 @@ function CaseListItem({ c, userMap, selected, onClick }: {
           <div className="flex items-center gap-1.5 flex-wrap mb-1">
             <StatusBadge status={c.status} />
             <PriorityBadge priority={c.priority} />
-            {c.escalation_level >= 2 && (
-              <span className="text-xs text-red-600 font-bold">🔥 ESC-{c.escalation_level}</span>
+            {c.escalation_level >= 1 && (
+              <span className={`text-xs font-bold ${c.escalation_level >= 2 ? "text-red-600" : "text-yellow-600"}`}>
+                ⬆ {c.escalation_level >= 3 ? "Executive" : c.escalation_level >= 2 ? "Safety Dir." : "Supervisor"}
+              </span>
             )}
           </div>
-          <p className="text-xs text-gray-500 truncate">
-            Incident <span className="font-mono">{c.incident_id.slice(0, 8)}…</span>
+          <p className="text-sm font-medium text-gray-800 capitalize truncate">
+            {c.incident_type ? c.incident_type.replace(/_/g, " ") : "Incident"}
+            {c.center_id && <span className="font-normal text-gray-400 text-xs"> · {c.center_id}</span>}
           </p>
           {assignee && (
-            <p className="text-xs text-gray-400 mt-0.5 truncate">→ {assignee.email}</p>
+            <p className="text-xs text-gray-400 mt-0.5 truncate">→ {assignee.email.split("@")[0]}</p>
           )}
         </div>
         <div className="text-xs text-gray-400 flex-shrink-0 text-right">
@@ -382,19 +456,26 @@ function CaseDetailPanel({ detail, users, userMap, onClose, onRefresh }: {
   onRefresh: () => void;
 }) {
   const { case: c, incident, tasks, comments } = detail;
-  const [activeTab, setActiveTab] = useState<"tasks" | "comments" | "evidence" | "timeline" | "copilot">("tasks");
+  const [activeTab, setActiveTab] = useState<"tasks" | "comments" | "evidence" | "timeline" | "actions" | "witnesses" | "osha" | "copilot">("tasks");
+  const [showQR, setShowQR] = useState(false);
   // timeline refresh tick for OperationalTimeline component
   const [timelineTick, setTimelineTick] = useState(0);
   const [updatingField, setUpdatingField] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   async function patchCase(data: Partial<{
     status: string; priority: string; escalation_level: number;
     assigned_to_user_id: string; assigned_role: string; due_date: string;
   }>) {
+    setSaveStatus("saving");
     try {
       await axios.patch(`${API_URL}/cases/${c.id}`, data);
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus("idle"), 2000);
       onRefresh();
     } catch (err: unknown) {
+      setSaveStatus("error");
+      setTimeout(() => setSaveStatus("idle"), 3000);
       console.error(axios.isAxiosError(err) ? err.response?.data?.detail : err);
     } finally { setUpdatingField(null); }
   }
@@ -402,30 +483,107 @@ function CaseDetailPanel({ detail, users, userMap, onClose, onRefresh }: {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-5 py-4 border-b border-gray-100 flex items-start justify-between gap-2">
-        <div>
-          <div className="flex items-center gap-2 flex-wrap mb-1">
-            <StatusBadge status={c.status} />
-            <PriorityBadge priority={c.priority} />
-            {c.escalation_level >= 1 && (
-              <span className={`text-xs font-bold ${c.escalation_level >= 3 ? "text-red-600" : c.escalation_level >= 2 ? "text-orange-600" : "text-yellow-600"}`}>
-                ⬆ Escalation Level {c.escalation_level}
-              </span>
+      <div className="px-5 py-4 border-b border-gray-100">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            {/* Status / priority / escalation row */}
+            <div className="flex items-center gap-2 flex-wrap mb-1.5">
+              <StatusBadge status={c.status} />
+              <PriorityBadge priority={c.priority} />
+              {c.escalation_level >= 1 && (
+                <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
+                  c.escalation_level >= 3 ? "bg-red-100 text-red-700"
+                  : c.escalation_level >= 2 ? "bg-orange-100 text-orange-700"
+                  : "bg-yellow-100 text-yellow-700"
+                }`}>
+                  ⬆ {c.escalation_level >= 3 ? "Executive Review" : c.escalation_level >= 2 ? "Safety Director Review" : "Supervisor Review"}
+                </span>
+              )}
+              {incident.recordable && (
+                <span className="text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded-full">
+                  ⚠ OSHA Review Required
+                </span>
+              )}
+            </div>
+
+            {/* Incident type + category */}
+            <p className="text-sm font-semibold text-gray-800 capitalize">
+              {incident.incident_type.replace(/_/g, " ")}
+              {incident.category && incident.category !== "General" && (
+                <span className="font-normal text-gray-500"> · {incident.category}</span>
+              )}
+            </p>
+
+            {/* Center + risk + meta */}
+            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+              <span className="text-xs text-gray-400">{incident.center_id}</span>
+              {(() => {
+                const score = incident.operational_risk_score ?? incident.risk_score;
+                const band = incident.risk_band;
+                if (score == null) return null;
+                const cls = score >= 80 ? "bg-red-100 text-red-700 border border-red-200"
+                  : score >= 60 ? "bg-orange-100 text-orange-700 border border-orange-200"
+                  : score >= 40 ? "bg-amber-50 text-amber-700 border border-amber-200"
+                  : "bg-gray-50 text-gray-500 border border-gray-200";
+                return (
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cls}`}>
+                    Risk {score}/100{band ? ` · ${band}` : ""}
+                  </span>
+                );
+              })()}
+              {incident.treatment_type && (
+                <span className="text-xs text-gray-400 capitalize">{incident.treatment_type.replace(/_/g, " ")}</span>
+              )}
+              {incident.employee_name && (
+                <span className="text-xs text-gray-400">· {incident.employee_name}</span>
+              )}
+            </div>
+
+            {/* OSHA readiness chip */}
+            {incident.recordable !== false && (
+              <div className="mt-1.5">
+                <OshaReadiness incident={incident} compact />
+              </div>
+            )}
+
+            {/* Incident description excerpt */}
+            {incident.description && (
+              <p className="text-xs text-gray-500 mt-2 italic line-clamp-2 leading-relaxed">
+                &ldquo;{incident.description.slice(0, 200)}{incident.description.length > 200 ? "…" : ""}&rdquo;
+              </p>
             )}
           </div>
-          <p className="text-xs text-gray-500">
-            Incident <span className="font-mono">{incident.id.slice(0, 8)}…</span>
-            {" · "}{incident.incident_type}
-            {incident.category && ` · ${incident.category}`}
-          </p>
-          <p className="text-xs text-gray-400 mt-0.5">
-            Center: {incident.center_id}
-            {incident.risk_score != null && ` · Risk: ${incident.risk_score}/100`}
-            {incident.recordable && " · OSHA Recordable"}
-          </p>
+          <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+            {saveStatus === "saving" && <span className="text-xs text-gray-400 animate-pulse">Saving…</span>}
+            {saveStatus === "saved" && <span className="text-xs text-green-600">✓ Saved</span>}
+            {saveStatus === "error" && <span className="text-xs text-red-500">Save failed</span>}
+            <button
+              onClick={() => setShowQR((v) => !v)}
+              title="Show case QR code"
+              className="text-xs px-2 py-1 rounded-lg border transition-colors hover:bg-gray-50"
+              style={{ borderColor: showQR ? "var(--pg-steel)" : "#e5e7eb", color: showQR ? "var(--pg-steel)" : "#9ca3af" }}>
+              QR
+            </button>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xl leading-none">×</button>
+          </div>
         </div>
-        <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-lg leading-none flex-shrink-0">×</button>
       </div>
+
+      {/* Case QR code panel */}
+      {showQR && (
+        <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 flex items-center gap-5">
+          <CaseQRCode caseId={c.id} />
+          <div>
+            <p className="text-xs font-semibold text-gray-700">Case QR Code</p>
+            <p className="text-xs text-gray-400 mt-0.5 max-w-xs leading-relaxed">
+              Scan this code with the PackGuardian mobile app to instantly pull up this case. Share as a screenshot with team members or print for a physical case file.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Investigation brief */}
+      <InvestigationBrief caseId={c.id} />
 
       {/* Assignment panel */}
       <div className="px-5 py-3 border-b border-gray-100 bg-gray-50">
@@ -464,18 +622,18 @@ function CaseDetailPanel({ detail, users, userMap, onClose, onRefresh }: {
               {users.map((u) => <option key={u.id} value={u.id}>{u.email}</option>)}
             </select>
           </div>
-          {/* Escalation */}
+          {/* Review stage */}
           <div>
-            <p className="text-gray-500 font-medium mb-1">Escalation Level</p>
+            <p className="text-gray-500 font-medium mb-1">Review Stage</p>
             <select
               value={c.escalation_level}
               onChange={(e) => { setUpdatingField("esc"); patchCase({ escalation_level: Number(e.target.value) }); }}
               disabled={updatingField === "esc"}
               className="w-full border border-gray-300 rounded px-2 py-1 bg-white text-xs focus:outline-none">
-              <option value="0">0 – Normal</option>
-              <option value="1">1 – Escalated</option>
-              <option value="2">2 – Urgent</option>
-              <option value="3">3 – Critical</option>
+              <option value="0">Normal</option>
+              <option value="1">Supervisor Review</option>
+              <option value="2">Safety Director Review</option>
+              <option value="3">Executive Review</option>
             </select>
           </div>
         </div>
@@ -484,11 +642,14 @@ function CaseDetailPanel({ detail, users, userMap, onClose, onRefresh }: {
       {/* Tabs */}
       <div className="flex border-b border-gray-100 px-3 overflow-x-auto">
         {([
-          { key: "tasks",    label: `Tasks (${detail.open_task_count}/${detail.task_count})` },
-          { key: "comments", label: "Comments" },
-          { key: "evidence", label: `Evidence (${detail.evidence_count})` },
-          { key: "timeline", label: "Timeline" },
-          { key: "copilot",  label: "✦ Copilot" },
+          { key: "tasks",     label: `Tasks (${detail.open_task_count}/${detail.task_count})` },
+          { key: "actions",   label: "Corrective Actions" },
+          { key: "witnesses", label: "Witnesses" },
+          { key: "osha",      label: incident.recordable !== false ? "⚠ OSHA" : "OSHA" },
+          { key: "comments",  label: "Comments" },
+          { key: "evidence",  label: `Evidence (${detail.evidence_count})` },
+          { key: "timeline",  label: "Timeline" },
+          { key: "copilot",   label: "✦ Copilot" },
         ] as const).map(({ key, label }) => (
           <button key={key} onClick={() => setActiveTab(key)}
             className={`px-3 py-2.5 text-xs font-medium border-b-2 -mb-px whitespace-nowrap transition-colors ${
@@ -503,6 +664,22 @@ function CaseDetailPanel({ detail, users, userMap, onClose, onRefresh }: {
       <div className="flex-1 overflow-y-auto px-5 py-4">
         {activeTab === "tasks" && (
           <TasksTab caseId={c.id} tasks={tasks} userMap={userMap} users={users} onRefresh={onRefresh} />
+        )}
+        {activeTab === "actions" && (
+          <CorrectiveActionsTab caseId={c.id} users={users} />
+        )}
+        {activeTab === "witnesses" && (
+          <WitnessesTab caseId={c.id} />
+        )}
+        {activeTab === "osha" && (
+          <div className="space-y-4">
+            <OshaReadiness incident={incident} />
+            <div className="text-xs text-gray-400 space-y-1 border-t border-gray-100 pt-3">
+              <p className="font-medium text-gray-600">About OSHA recordability</p>
+              <p>Under 29 CFR 1904, work-related injuries requiring medical treatment beyond first aid, days away from work, or restricted duty must be recorded on OSHA Form 300.</p>
+              <p>PackGuardian determines recordability automatically from treatment type and work restriction data. Review and finalize records in the OSHA section.</p>
+            </div>
+          </div>
         )}
         {activeTab === "comments" && (
           <CommentsTab caseId={c.id} comments={comments} userMap={userMap} onRefresh={onRefresh} />
@@ -648,7 +825,11 @@ function CommentsTab({ caseId, comments, userMap, onRefresh }: {
   return (
     <div className="space-y-4">
       <ul className="space-y-3">
-        {comments.length === 0 && <li className="text-xs text-gray-400 italic">No comments yet</li>}
+        {comments.length === 0 && (
+          <li className="text-xs text-gray-400 py-2">
+            No notes yet. Add internal observations, updates, or context for the investigation team.
+          </li>
+        )}
         {comments.map((c) => {
           const author = userMap[c.user_id];
           return (
@@ -716,7 +897,13 @@ function TimelineTab({ events, userMap }: {
 
   return (
     <div className="space-y-0">
-      {events.length === 0 && <p className="text-xs text-gray-400 italic">No events yet</p>}
+      {events.length === 0 && (
+        <div className="text-center py-8 space-y-2">
+          <p className="text-2xl">◎</p>
+          <p className="text-xs text-gray-400">No events recorded yet</p>
+          <p className="text-xs text-gray-300">Timeline updates automatically as the investigation progresses</p>
+        </div>
+      )}
       {events.map((e, i) => {
         const actor = userMap[e.actor_id];
         return (
@@ -755,5 +942,420 @@ function PriorityBadge({ priority }: { priority: CasePriority }) {
     <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium capitalize ${PRIORITY_STYLES[priority] ?? "bg-gray-100 text-gray-600"}`}>
       {priority}
     </span>
+  );
+}
+
+// ── Corrective Actions tab ─────────────────────────────────────────────────────
+
+const ROOT_CAUSE_LABELS: Record<string, string> = {
+  staffing: "Staffing", training: "Training", equipment: "Equipment",
+  facility: "Facility", animal_behavior: "Animal Behavior", communication: "Communication",
+  process_gap: "Process Gap", environmental: "Environmental", unknown: "Unknown",
+};
+
+const CA_STATUS_STYLES: Record<string, string> = {
+  open: "bg-gray-100 text-gray-600",
+  in_progress: "bg-blue-100 text-blue-700",
+  completed: "bg-green-100 text-green-700",
+  needs_verification: "bg-amber-100 text-amber-700",
+};
+
+const CA_STATUS_LABELS: Record<string, string> = {
+  open: "Open",
+  in_progress: "In Progress",
+  completed: "Completed",
+  needs_verification: "Ready to Verify",
+};
+
+const CA_STATUSES = ["open", "in_progress", "completed", "needs_verification"] as const;
+type CAStatus = typeof CA_STATUSES[number];
+
+function CorrectiveActionsTab({ caseId, users }: { caseId: string; users: TenantUser[] }) {
+  const [actions, setActions] = useState<CorrectiveAction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    title: "", description: "", root_cause: "", assigned_to_name: "", due_date: "",
+  });
+
+  const fetch = useCallback(async () => {
+    try {
+      const r = await axios.get<CorrectiveAction[]>(`${API_URL}/cases/${caseId}/corrective-actions`);
+      setActions(r.data);
+    } catch { /* non-fatal */ }
+    finally { setLoading(false); }
+  }, [caseId]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+
+  async function create(e: FormEvent) {
+    e.preventDefault(); setSaving(true);
+    try {
+      await axios.post(`${API_URL}/cases/${caseId}/corrective-actions`, {
+        title: form.title,
+        description: form.description || null,
+        root_cause: form.root_cause || null,
+        assigned_to_name: form.assigned_to_name || null,
+        due_date: form.due_date ? new Date(form.due_date).toISOString() : null,
+      });
+      setForm({ title: "", description: "", root_cause: "", assigned_to_name: "", due_date: "" });
+      setShowForm(false);
+      fetch();
+    } catch { /* ignore */ }
+    finally { setSaving(false); }
+  }
+
+  async function updateStatus(id: string, status: string) {
+    setUpdatingId(id);
+    try {
+      await axios.patch(`${API_URL}/cases/${caseId}/corrective-actions/${id}`, { status });
+      fetch();
+    } catch { /* ignore */ }
+    finally { setUpdatingId(null); }
+  }
+
+  const open = actions.filter((a) => a.status !== "completed");
+  const done = actions.filter((a) => a.status === "completed");
+
+  if (loading) return <p className="text-xs text-gray-400 text-center py-6">Loading…</p>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-gray-500 font-medium">
+          {open.length} open · {done.length} completed
+          {actions.some((a) => a.is_overdue) && (
+            <span className="ml-2 text-red-500 font-semibold">· {actions.filter((a) => a.is_overdue).length} follow-up needed</span>
+          )}
+        </p>
+        <button onClick={() => setShowForm((p) => !p)} className="text-xs text-indigo-600 hover:underline">
+          {showForm ? "Cancel" : "+ Add Action"}
+        </button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={create} className="space-y-2 bg-gray-50 rounded-xl border border-gray-200 p-3">
+          <input required placeholder="Action title (e.g. Deep clean required)"
+            value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+            className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          <textarea placeholder="Description (optional)" rows={2}
+            value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+            className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          <div className="grid grid-cols-2 gap-2">
+            <select value={form.root_cause} onChange={(e) => setForm((f) => ({ ...f, root_cause: e.target.value }))}
+              className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none">
+              <option value="">Root cause…</option>
+              {Object.entries(ROOT_CAUSE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+            <input type="text" placeholder="Assigned to (name)"
+              value={form.assigned_to_name} onChange={(e) => setForm((f) => ({ ...f, assigned_to_name: e.target.value }))}
+              className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          </div>
+          <input type="date" value={form.due_date} onChange={(e) => setForm((f) => ({ ...f, due_date: e.target.value }))}
+            className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none" />
+          <button type="submit" disabled={saving}
+            className="w-full py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-lg disabled:opacity-50">
+            {saving ? "Saving…" : "Create Corrective Action"}
+          </button>
+        </form>
+      )}
+
+      {actions.length === 0 ? (
+        <div className="text-center py-8 text-gray-400">
+          <p className="text-2xl mb-2">✓</p>
+          <p className="text-xs">No corrective actions yet</p>
+          <p className="text-xs mt-1 text-gray-300">Add actions to track follow-through on this incident</p>
+        </div>
+      ) : (
+        <ul className="space-y-2">
+          {actions.map((a) => (
+            <li key={a.id} className={`border rounded-xl p-3 transition-all ${
+              a.is_overdue ? "border-red-300 bg-red-50"
+              : a.status === "completed" ? "border-gray-100 bg-gray-50 opacity-60"
+              : a.status === "needs_verification" ? "border-amber-200 bg-amber-50/40"
+              : a.status === "in_progress" ? "border-blue-200 bg-blue-50/20"
+              : "border-gray-200 bg-white"
+            }`}>
+              <div className="flex items-start gap-2">
+                {/* Status icon / quick-check */}
+                <button
+                  onClick={() => a.status !== "completed" && updateStatus(a.id, "completed")}
+                  disabled={updatingId === a.id || a.status === "completed"}
+                  className={`mt-0.5 w-8 h-8 flex-shrink-0 rounded-full border-2 flex items-center justify-center transition-colors ${
+                    a.status === "completed"
+                      ? "border-green-500 bg-green-500 text-white"
+                      : a.is_overdue
+                        ? "border-red-400 hover:bg-red-100 active:bg-red-200"
+                        : "border-gray-300 hover:border-green-400 hover:bg-green-50 active:bg-green-100"
+                  } disabled:cursor-default`}
+                  title={a.status === "completed" ? "Completed" : "Mark as completed"}
+                >
+                  {a.status === "completed" && <span className="text-sm leading-none">✓</span>}
+                  {updatingId === a.id && <span className="text-sm leading-none animate-spin">⟳</span>}
+                </button>
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+                    {a.root_cause && (
+                      <span className="text-xs bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-medium">
+                        {ROOT_CAUSE_LABELS[a.root_cause] ?? a.root_cause}
+                      </span>
+                    )}
+                    <span className={`text-xs px-1.5 py-0.5 rounded ${CA_STATUS_STYLES[a.status] ?? "bg-gray-100 text-gray-600"}`}>
+                      {CA_STATUS_LABELS[a.status] ?? a.status.replace(/_/g, " ")}
+                    </span>
+                    {a.is_overdue && (
+                      <span className="text-xs text-red-600 font-bold">⚑ Follow-up needed</span>
+                    )}
+                  </div>
+                  <p className={`text-sm font-medium leading-snug ${a.status === "completed" ? "line-through text-gray-400" : "text-gray-800"}`}>
+                    {a.title}
+                  </p>
+                  {a.description && <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{a.description}</p>}
+                  {a.notes && a.status === "completed" && (
+                    <p className="text-xs text-green-700 bg-green-50 border border-green-100 rounded px-2 py-1 mt-1 leading-relaxed">
+                      {a.notes}
+                    </p>
+                  )}
+                  <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-400 flex-wrap">
+                    {a.assigned_to_name && (
+                      <span className="flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 flex-shrink-0" />
+                        {a.assigned_to_name}
+                      </span>
+                    )}
+                    {a.due_date && (
+                      <span className={a.is_overdue ? "text-red-500 font-medium" : ""}>
+                        Due {formatDate(a.due_date)}
+                      </span>
+                    )}
+                    {a.completed_at && <span className="text-green-600">✓ {formatDate(a.completed_at)}</span>}
+                  </div>
+                </div>
+
+                {/* Status dropdown for non-done items */}
+                {a.status !== "completed" && (
+                  <select
+                    value={a.status}
+                    disabled={updatingId === a.id}
+                    onChange={(e) => updateStatus(a.id, e.target.value)}
+                    className="text-xs border border-gray-200 rounded px-1.5 py-1 bg-white focus:outline-none flex-shrink-0 disabled:opacity-50">
+                    {CA_STATUSES.map((s) => (
+                      <option key={s} value={s}>{CA_STATUS_LABELS[s] ?? s.replace(/_/g, " ")}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ── Witnesses tab ─────────────────────────────────────────────────────────────
+
+function WitnessesTab({ caseId }: { caseId: string }) {
+  const [statements, setStatements] = useState<WitnessStatement[]>([]);
+  const [synthesis, setSynthesis] = useState<WitnessAISummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [synthesizing, setSynthesizing] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    witness_name: "", witness_role: "", shift_at_time: "",
+    observed_directly: true, intervention_attempted: false, statement: "",
+  });
+
+  const fetch = useCallback(async () => {
+    try {
+      const r = await axios.get<WitnessStatement[]>(`${API_URL}/cases/${caseId}/witnesses`);
+      setStatements(r.data);
+    } catch { /* non-fatal */ }
+    finally { setLoading(false); }
+  }, [caseId]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+
+  async function save(e: FormEvent) {
+    e.preventDefault(); setSaving(true);
+    try {
+      await axios.post(`${API_URL}/cases/${caseId}/witnesses`, {
+        witness_name: form.witness_name,
+        witness_role: form.witness_role || null,
+        shift_at_time: form.shift_at_time || null,
+        observed_directly: form.observed_directly,
+        intervention_attempted: form.intervention_attempted,
+        statement: form.statement,
+      });
+      setForm({ witness_name: "", witness_role: "", shift_at_time: "", observed_directly: true, intervention_attempted: false, statement: "" });
+      setShowForm(false);
+      fetch();
+    } catch { /* ignore */ }
+    finally { setSaving(false); }
+  }
+
+  async function synthesize() {
+    setSynthesizing(true);
+    try {
+      const r = await axios.get<WitnessAISummary>(`${API_URL}/cases/${caseId}/witnesses/synthesize`);
+      setSynthesis(r.data);
+    } catch { /* ignore */ }
+    finally { setSynthesizing(false); }
+  }
+
+  if (loading) return <p className="text-xs text-gray-400 text-center py-6">Loading…</p>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-gray-500 font-medium">{statements.length} statement{statements.length !== 1 ? "s" : ""} collected</p>
+        <div className="flex gap-2">
+          {statements.length >= 2 && (
+            <button onClick={synthesize} disabled={synthesizing}
+              className="text-xs text-indigo-600 hover:underline disabled:opacity-50">
+              {synthesizing ? "Analyzing…" : "✦ AI Synthesis"}
+            </button>
+          )}
+          <button onClick={() => setShowForm((p) => !p)} className="text-xs text-indigo-600 hover:underline">
+            {showForm ? "Cancel" : "+ Add Statement"}
+          </button>
+        </div>
+      </div>
+
+      {/* AI Synthesis Panel */}
+      {synthesis && (
+        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold text-indigo-800">✦ AI Witness Synthesis</p>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-indigo-500">{synthesis.engine === "claude" ? "Claude" : "Rule-based"}</span>
+              <button onClick={() => setSynthesis(null)} className="text-indigo-400 hover:text-indigo-700 text-sm">×</button>
+            </div>
+          </div>
+          <div>
+            <p className="text-xs font-medium text-indigo-700 mb-1">Common Sequence of Events</p>
+            <p className="text-xs text-indigo-900">{synthesis.common_sequence}</p>
+          </div>
+          {synthesis.likely_triggers.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-indigo-700 mb-1">Likely Triggers</p>
+              <ul className="space-y-0.5">
+                {synthesis.likely_triggers.map((t, i) => (
+                  <li key={i} className="text-xs text-indigo-800 before:content-['·'] before:mr-1.5">{t}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {synthesis.discrepancies.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-amber-700 mb-1">Discrepancies to Review</p>
+              <ul className="space-y-0.5">
+                {synthesis.discrepancies.map((d, i) => (
+                  <li key={i} className="text-xs text-amber-800 before:content-['!'] before:mr-1.5">{d}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {synthesis.missing_information.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-gray-600 mb-1">Missing Information</p>
+              <ul className="space-y-0.5">
+                {synthesis.missing_information.map((m, i) => (
+                  <li key={i} className="text-xs text-gray-600 before:content-['?'] before:mr-1.5">{m}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Add form */}
+      {showForm && (
+        <form onSubmit={save} className="space-y-2 bg-gray-50 rounded-xl border border-gray-200 p-3">
+          <div className="grid grid-cols-2 gap-2">
+            <input required placeholder="Witness name *"
+              value={form.witness_name} onChange={(e) => setForm((f) => ({ ...f, witness_name: e.target.value }))}
+              className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+            <input placeholder="Role (e.g. Lead Handler)"
+              value={form.witness_role} onChange={(e) => setForm((f) => ({ ...f, witness_role: e.target.value }))}
+              className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none" />
+          </div>
+          <input placeholder="Shift at time of incident (e.g. Morning shift)"
+            value={form.shift_at_time} onChange={(e) => setForm((f) => ({ ...f, shift_at_time: e.target.value }))}
+            className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none" />
+          <textarea required placeholder="Witness statement *" rows={4}
+            value={form.statement} onChange={(e) => setForm((f) => ({ ...f, statement: e.target.value }))}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          <div className="flex gap-4">
+            <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+              <input type="checkbox" checked={form.observed_directly}
+                onChange={(e) => setForm((f) => ({ ...f, observed_directly: e.target.checked }))}
+                className="rounded border-gray-300" />
+              Directly observed
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+              <input type="checkbox" checked={form.intervention_attempted}
+                onChange={(e) => setForm((f) => ({ ...f, intervention_attempted: e.target.checked }))}
+                className="rounded border-gray-300" />
+              Attempted intervention
+            </label>
+          </div>
+          <button type="submit" disabled={saving}
+            className="w-full py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-lg disabled:opacity-50">
+            {saving ? "Saving…" : "Save Witness Statement"}
+          </button>
+        </form>
+      )}
+
+      {statements.length === 0 ? (
+        <div className="text-center py-8 text-gray-400">
+          <p className="text-2xl mb-2">👁</p>
+          <p className="text-xs">No witness statements yet</p>
+          <p className="text-xs mt-1 text-gray-300">Collect accounts from people who observed the incident</p>
+        </div>
+      ) : (
+        <ul className="space-y-2">
+          {statements.map((s) => (
+            <li key={s.id} className="border border-gray-200 rounded-xl bg-white overflow-hidden">
+              <div className="px-4 py-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-medium text-gray-800">{s.witness_name}</p>
+                    <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-400 flex-wrap">
+                      {s.witness_role && <span>{s.witness_role}</span>}
+                      {s.shift_at_time && <span>· {s.shift_at_time}</span>}
+                      {s.observed_directly && <span className="text-green-600">✓ Direct observer</span>}
+                      {s.intervention_attempted && <span className="text-blue-600">↗ Intervened</span>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400">{relativeTime(s.created_at)}</span>
+                    <button onClick={() => setExpandedId(expandedId === s.id ? null : s.id)}
+                      className="text-xs text-gray-400 hover:text-gray-700">
+                      {expandedId === s.id ? "▲" : "▼"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+              {expandedId === s.id && (
+                <div className="border-t border-gray-100 px-4 py-3 bg-gray-50 space-y-2">
+                  <p className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed">{s.statement}</p>
+                  {s.ai_summary && (
+                    <div className="bg-indigo-50 rounded-lg px-3 py-2 text-xs text-indigo-800">
+                      <span className="font-medium">✦ AI: </span>{s.ai_summary}
+                    </div>
+                  )}
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
